@@ -399,7 +399,12 @@
         <div id="editor-panel">
             <div class="editor-header">
                 <span class="editor-title">Script (Markdown supported)</span>
-                <button class="btn btn-primary" onclick="startPrompter()">Start Prompter</button>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <select class="setting-select" id="sample-select" style="min-width: 180px;">
+                        <option value="">Load sample script...</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="startPrompter()">Start Prompter</button>
+                </div>
             </div>
             <textarea id="script-input" placeholder="Paste your script here...
 
@@ -535,6 +540,8 @@ The prompter will track your speech and scroll automatically."></textarea>
                     totalWords = data.totalWords || 0;
                     settings = data.settings || {};
                     applySettings(settings);
+                    // Populate sample scripts dropdown
+                    populateSamples(data.samples || []);
                     break;
 
                 case 'script_updated':
@@ -773,6 +780,32 @@ The prompter will track your speech and scroll automatically."></textarea>
                     resetDisplay();
                     break;
             }
+        });
+
+        // Populate sample scripts dropdown
+        function populateSamples(samples) {
+            const select = document.getElementById('sample-select');
+            // Clear existing options except the first placeholder
+            while (select.options.length > 1) {
+                select.remove(1);
+            }
+            // Add sample options
+            samples.forEach(sample => {
+                const option = document.createElement('option');
+                option.value = sample.filename;
+                option.textContent = sample.name;
+                select.appendChild(option);
+            });
+        }
+
+        // Sample script selection handler
+        document.getElementById('sample-select').addEventListener('change', (e) => {
+            const filename = e.target.value;
+            if (filename && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'load_sample', filename: filename }));
+            }
+            // Reset dropdown to placeholder
+            e.target.value = '';
         });
 
         // Settings change handlers

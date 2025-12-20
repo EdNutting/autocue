@@ -150,7 +150,7 @@ class WebServer:
     """
     Serves the autocue web interface and manages WebSocket connections.
     """
-    
+
     DEFAULT_SETTINGS = {
         "fontSize": 48,
         "fontFamily": "Georgia, serif",
@@ -168,13 +168,21 @@ class WebServer:
         self,
         host: str = "127.0.0.1",
         port: int = 8765,
-        initial_settings: Optional[dict] = None
+        initial_settings: Optional[dict] = None,
+        samples_dir: Optional[str] = None
     ):
         self.host = host
         self.port = port
         self.app = web.Application()
         self.websockets: Set[web.WebSocketResponse] = set()
         self.runner: Optional[web.AppRunner] = None
+
+        # Sample scripts directory
+        if samples_dir:
+            self.samples_dir = Path(samples_dir)
+        else:
+            # Default to samples/ in the project root
+            self.samples_dir = Path(__file__).parent.parent.parent / "samples"
 
         # Current state
         self.script_text: str = ""
@@ -189,6 +197,28 @@ class WebServer:
             self.settings.update(initial_settings)
 
         self._setup_routes()
+
+    def _get_sample_scripts(self) -> List[Dict[str, str]]:
+        """Get list of available sample scripts."""
+        samples = []
+        if self.samples_dir.exists():
+            for f in sorted(self.samples_dir.glob("*.md")):
+                samples.append({
+                    "name": f.stem.replace("_", " ").title(),
+                    "filename": f.name
+                })
+        return samples
+
+    def _load_sample_script(self, filename: str) -> Optional[str]:
+        """Load a sample script by filename."""
+        if not filename:
+            return None
+        # Sanitize filename to prevent path traversal
+        safe_name = Path(filename).name
+        script_path = self.samples_dir / safe_name
+        if script_path.exists() and script_path.suffix == ".md":
+            return script_path.read_text(encoding="utf-8")
+        return None
         
     def _setup_routes(self):
         """Set up HTTP routes."""
@@ -219,7 +249,8 @@ class WebServer:
                 "script": self.script_text,
                 "scriptHtml": self.script_html,
                 "totalWords": self.total_words,
-                "settings": self.settings
+                "settings": self.settings,
+                "samples": self._get_sample_scripts()
             })
             
             async for msg in ws:
@@ -301,6 +332,22 @@ class WebServer:
             debug_log.log_frontend_word(word_index, word, source_line, source_offset)
             # Also log the raw server data
             debug_log.log_frontend_server_data(server_word_index, source_line, source_offset)
+
+        elif msg_type == "load_sample":
+            # Load a sample script by filename
+            filename = data.get("filename", "")
+            content = self._load_sample_script(filename)
+            if content is not None:
+                self.script_text = content
+                self.script_html, self.total_words, _ = render_script_with_word_indices(
+                    self.script_text
+                )
+                await self.broadcast({
+                    "type": "script_updated",
+                    "script": self.script_text,
+                    "scriptHtml": self.script_html,
+                    "totalWords": self.total_words
+                })
             
     async def _handle_script_upload(self, request: web.Request) -> web.Response:
         """Handle script upload via POST."""
