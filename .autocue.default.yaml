@@ -1,0 +1,22 @@
+model: small
+model_path: null
+host: 127.0.0.1
+port: 8765
+audio_device: null
+chunk_ms: 100
+display:
+  fontSize: 48
+  fontFamily: Georgia, serif
+  lineHeight: 1.6
+  pastLines: 1
+  futureLines: 8
+  theme: dark
+  highlightColor: "#FFD700"
+  textColor: "#FFFFFF"
+  dimColor: "#666666"
+  backgroundColor: "#1a1a1a"
+tracking:
+  window_size: 8
+  match_threshold: 65.0
+  backtrack_threshold: 3
+  max_jump_distance: 50

@@ -1,0 +1,451 @@
+"""
+Tests for the ScriptTracker optimistic matching algorithm.
+"""
+
+import pytest
+from src.autocue.tracker import ScriptTracker, ScriptPosition
+
+
+class TestOptimisticWordMatching:
+    """Tests for word-by-word optimistic matching."""
+
+    def test_single_word_advancement(self):
+        """Each spoken word should advance position by 1."""
+        tracker = ScriptTracker("The quick brown fox")
+
+        pos1 = tracker.update("the")
+        assert pos1.word_index == 1
+        assert pos1.confidence == 100.0
+
+        pos2 = tracker.update("the quick")
+        assert pos2.word_index == 2
+
+        pos3 = tracker.update("the quick brown")
+        assert pos3.word_index == 3
+
+        pos4 = tracker.update("the quick brown fox")
+        assert pos4.word_index == 4
+
+    def test_initial_position_is_zero(self):
+        """Tracker should start at position 0."""
+        tracker = ScriptTracker("hello world")
+        assert tracker.optimistic_position == 0
+        assert tracker.current_word_index == 0
+
+    def test_empty_transcription_no_change(self):
+        """Empty transcription should not change position."""
+        tracker = ScriptTracker("hello world")
+        tracker.update("hello")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("")
+        assert tracker.optimistic_position == pos_before
+
+        tracker.update("   ")
+        assert tracker.optimistic_position == pos_before
+
+
+class TestWordSkipping:
+    """Tests for handling skipped words."""
+
+    def test_skip_one_word(self):
+        """Should handle speaker skipping one word."""
+        tracker = ScriptTracker("The quick brown fox")
+
+        tracker.update("the")
+        # Speaker says "brown" skipping "quick"
+        pos = tracker.update("the brown")
+        # Should advance past both "quick" (skipped) and "brown" (matched)
+        assert pos.word_index == 3
+
+    def test_skip_two_words(self):
+        """Should handle speaker skipping two words."""
+        tracker = ScriptTracker("The quick brown fox jumps")
+
+        tracker.update("the")
+        # Speaker says "fox" skipping "quick" and "brown"
+        pos = tracker.update("the fox")
+        # Should advance past "quick", "brown" (skipped) and "fox" (matched)
+        assert pos.word_index == 4
+
+    def test_no_match_after_max_skip(self):
+        """Should not advance if word doesn't match within skip range."""
+        tracker = ScriptTracker("The quick brown fox jumps over")
+
+        tracker.update("the")
+        initial_pos = tracker.optimistic_position
+
+        # "over" is too far ahead (4 words), shouldn't match
+        pos = tracker.update("the over")
+        # Position should only advance for "the", not "over"
+        assert pos.word_index == initial_pos
+
+
+class TestFuzzyWordMatching:
+    """Tests for fuzzy matching of individual words."""
+
+    def test_case_insensitive_matching(self):
+        """Should match words regardless of case."""
+        tracker = ScriptTracker("The Quick Brown Fox")
+
+        pos = tracker.update("THE QUICK BROWN")
+        assert pos.word_index == 3
+
+    def test_fuzzy_match_similar_words(self):
+        """Should match words with minor differences."""
+        tracker = ScriptTracker("recognize the pattern")
+
+        # "recognise" (British spelling) should match "recognize"
+        pos = tracker.update("recognise")
+        assert pos.word_index == 1
+
+    def test_punctuation_ignored(self):
+        """Punctuation should be ignored in matching."""
+        tracker = ScriptTracker("Hello, world! How are you?")
+
+        pos = tracker.update("hello world how")
+        assert pos.word_index == 3
+
+
+class TestValidationTriggering:
+    """Tests for validation triggering logic."""
+
+    def test_validation_triggers_after_five_words(self):
+        """Validation should be needed after 5 words spoken."""
+        tracker = ScriptTracker("one two three four five six seven eight")
+
+        assert tracker.needs_validation is False
+
+        # Speak 4 words - no validation yet
+        for text in ["one", "one two", "one two three", "one two three four"]:
+            tracker.update(text)
+        assert tracker.needs_validation is False
+
+        # 5th word triggers validation
+        tracker.update("one two three four five")
+        assert tracker.needs_validation is True
+
+    def test_validation_resets_counter(self):
+        """Validation should reset the word counter."""
+        tracker = ScriptTracker("one two three four five six seven eight nine ten")
+
+        # Trigger validation
+        for text in ["one", "one two", "one two three", "one two three four", "one two three four five"]:
+            tracker.update(text)
+        assert tracker.needs_validation is True
+
+        # Run validation
+        tracker.validate_position("one two three four five")
+        assert tracker.needs_validation is False
+        assert tracker.words_since_validation == 0
+
+
+class TestBacktrackDetection:
+    """Tests for backtrack detection via validation."""
+
+    def test_backtrack_detected_significant_deviation(self):
+        """Should detect backtrack only when deviation is significant (>2 words)."""
+        tracker = ScriptTracker("The quick brown fox jumps over the lazy dog sits quietly")
+
+        # Advance to word 8 (dog)
+        for text in ["the", "the quick", "the quick brown", "the quick brown fox",
+                     "the quick brown fox jumps", "the quick brown fox jumps over",
+                     "the quick brown fox jumps over the", "the quick brown fox jumps over the lazy"]:
+            tracker.update(text)
+
+        assert tracker.optimistic_position == 8
+        assert tracker.high_water_mark == 8
+
+        # Simulate a real backtrack - user restarts with completely different words
+        # that match the beginning of the script, not near position 8
+        tracker.needs_validation = True
+        validated_pos, is_backtrack = tracker.validate_position("the quick brown")
+
+        assert is_backtrack is True
+        # Position should be reset to match "the quick brown" (near position 0-3)
+        assert tracker.optimistic_position < 5
+
+    def test_no_backtrack_for_forward_movement(self):
+        """Forward movement should not trigger backtrack."""
+        tracker = ScriptTracker("The quick brown fox")
+
+        tracker.update("the quick")
+        tracker.needs_validation = True
+        validated_pos, is_backtrack = tracker.validate_position("the quick brown")
+
+        assert is_backtrack is False
+
+    def test_no_backtrack_for_small_deviation(self):
+        """Small deviations (≤2 words) should not trigger corrections."""
+        tracker = ScriptTracker("The quick brown fox jumps over the lazy dog")
+
+        # Advance to position 4 (after "fox")
+        for text in ["the", "the quick", "the quick brown", "the quick brown fox"]:
+            tracker.update(text)
+
+        assert tracker.optimistic_position == 4
+
+        # Force validation with transcript that matches around position 3-4
+        # (small deviation from optimistic position of 4)
+        tracker.needs_validation = True
+        validated_pos, is_backtrack = tracker.validate_position("quick brown fox jumps")
+
+        assert is_backtrack is False
+        # Position should stay at 4 (trust optimistic for ≤2 word deviation)
+        assert tracker.optimistic_position == 4
+
+
+class TestRepeatedWords:
+    """Tests for handling repeated words in the script."""
+
+    def test_repeated_word_continues_forward(self):
+        """Repeated words should not cause false backtracking."""
+        tracker = ScriptTracker("the quick brown the lazy dog")
+
+        # Advance through first "the quick brown"
+        for text in ["the", "the quick", "the quick brown"]:
+            tracker.update(text)
+
+        assert tracker.optimistic_position == 3
+
+        # Now say "the" again - should match position 3, not position 0
+        tracker.update("the quick brown the")
+        assert tracker.optimistic_position == 4  # Moved to position after second "the"
+
+    def test_repeated_word_validation_trusts_optimistic(self):
+        """Validation should trust optimistic position when repeated words cause ambiguity."""
+        tracker = ScriptTracker("the quick brown the lazy dog")
+
+        # Advance to position 4 (after second "the")
+        for text in ["the", "the quick", "the quick brown", "the quick brown the"]:
+            tracker.update(text)
+
+        assert tracker.optimistic_position == 4
+
+        # Validation with "the lazy" - matches position 3-4
+        # Should trust optimistic since deviation is small
+        tracker.needs_validation = True
+        validated_pos, is_backtrack = tracker.validate_position("the lazy dog")
+
+        # Should NOT backtrack - trust optimistic for small deviation
+        assert is_backtrack is False
+        assert tracker.optimistic_position == 4
+
+    def test_common_words_dont_cause_backtrack(self):
+        """Common repeated words like 'the', 'a', 'is' should not cause issues."""
+        tracker = ScriptTracker("The cat is on the mat and the dog is happy")
+
+        # Advance through the script
+        for text in ["the cat", "the cat is", "the cat is on", "the cat is on the", "the cat is on the mat"]:
+            tracker.update(text)
+
+        position_after_mat = tracker.optimistic_position
+
+        # Continue with "and the" - the second "the" should not cause backtrack
+        tracker.update("the cat is on the mat and")
+        tracker.update("the cat is on the mat and the")
+
+        # Position should have advanced, not gone back
+        assert tracker.optimistic_position > position_after_mat
+
+
+class TestResetAndJump:
+    """Tests for reset and jump functionality."""
+
+    def test_reset_clears_all_state(self):
+        """Reset should clear all tracking state."""
+        tracker = ScriptTracker("hello world test")
+
+        tracker.update("hello world")
+        assert tracker.optimistic_position > 0
+
+        tracker.reset()
+
+        assert tracker.optimistic_position == 0
+        assert tracker.current_word_index == 0
+        assert tracker.high_water_mark == 0
+        assert tracker.last_transcription == ""
+        assert tracker.words_since_validation == 0
+
+    def test_jump_to_position(self):
+        """Jump should set position and sync state."""
+        tracker = ScriptTracker("one two three four five")
+
+        tracker.jump_to(3)
+
+        assert tracker.optimistic_position == 3
+        assert tracker.current_word_index == 3
+        assert tracker.high_water_mark == 3
+        assert tracker.last_transcription == ""
+
+    def test_jump_clamps_to_valid_range(self):
+        """Jump should clamp to valid word indices."""
+        tracker = ScriptTracker("one two three")
+
+        tracker.jump_to(100)
+        assert tracker.optimistic_position == 2  # Last valid index
+
+        tracker.jump_to(-5)
+        assert tracker.optimistic_position == 0
+
+
+class TestExtractNewWords:
+    """Tests for extracting new words from transcription."""
+
+    def test_extract_new_words_extending_prefix(self):
+        """Should extract only new words when extending previous."""
+        tracker = ScriptTracker("the quick brown fox")
+
+        tracker.update("the quick")
+        new_words = tracker._extract_new_words("the quick brown")
+
+        assert new_words == ["brown"]
+
+    def test_extract_new_words_fresh_start(self):
+        """Should handle completely new transcription."""
+        tracker = ScriptTracker("the quick brown fox")
+
+        # First transcription
+        new_words = tracker._extract_new_words("hello world")
+        assert len(new_words) > 0
+
+    def test_extract_new_words_no_match(self):
+        """Should return recent words when no prefix match."""
+        tracker = ScriptTracker("the quick brown fox")
+        tracker.last_transcription = "completely different"
+
+        new_words = tracker._extract_new_words("hello world testing")
+        # Should return last 3 words when no prefix match
+        assert len(new_words) <= 3
+
+
+class TestDisplayMethods:
+    """Tests for display-related methods."""
+
+    def test_get_display_lines(self):
+        """Should return correct lines around current position."""
+        script = "Line one.\nLine two.\nLine three.\nLine four."
+        tracker = ScriptTracker(script)
+
+        # Move to line 2
+        tracker.update("line one line two")
+
+        lines, current_idx, word_offset = tracker.get_display_lines(past_lines=1, future_lines=2)
+
+        assert len(lines) > 0
+        assert current_idx >= 0
+
+    def test_progress_property(self):
+        """Progress should reflect position through script."""
+        tracker = ScriptTracker("one two three four")
+
+        assert tracker.progress == 0.0
+
+        tracker.update("one two")
+        assert 0.0 < tracker.progress < 1.0
+
+        tracker.update("one two three four")
+        assert tracker.progress == 1.0
+
+
+class TestEdgeCases:
+    """Tests for edge cases and boundary conditions."""
+
+    def test_empty_script(self):
+        """Should handle empty script gracefully."""
+        tracker = ScriptTracker("")
+        assert tracker.words == []
+        assert tracker.progress == 0.0
+
+    def test_single_word_script(self):
+        """Should handle single word script."""
+        tracker = ScriptTracker("hello")
+
+        pos = tracker.update("hello")
+        assert pos.word_index == 1
+        assert tracker.progress == 1.0
+
+    def test_position_beyond_script(self):
+        """Should not advance beyond script length."""
+        tracker = ScriptTracker("hello world")
+
+        tracker.update("hello world extra words here")
+        assert tracker.optimistic_position <= len(tracker.words)
+
+
+class TestBacktrackSkipDisable:
+    """Tests for skip logic being disabled after backtrack to prevent false matches."""
+
+    def test_skip_disabled_after_backtrack(self):
+        """After backtrack, skip logic should be disabled to prevent matching old transcript words."""
+        # Script has two similar sections
+        script = "navigate at a glance subsection example this is a subsection"
+        tracker = ScriptTracker(script)
+
+        # Advance to "this is a subsection" (words 6-9)
+        tracker.jump_to(6)  # at "this"
+        tracker.last_transcription = "this is a subsection"
+        tracker.update("this is a subsection")
+
+        # Now simulate what happens in a backtrack: position is reset
+        # but transcript still contains "subsection" from the later position
+        tracker.optimistic_position = 2  # at "a" (before "glance")
+        tracker.current_word_index = 2
+        tracker.high_water_mark = 2
+        tracker.skip_disabled_count = 5  # This is what the backtrack code sets
+        tracker.last_transcription = ""  # Cleared by backtrack
+
+        # Now if we try to match with old transcript remnants,
+        # the skip logic should NOT match "subsection" at position 4
+        # even though the transcript contains it
+        pos = tracker.update("a glance subsection")
+
+        # Position should advance through "a", "glance" but NOT skip to "subsection"
+        # because skip logic is disabled
+        # After "a" matches at pos 2, position becomes 3 ("glance")
+        # After "glance" matches at pos 3, position becomes 4 ("subsection")
+        # "subsection" should match at current pos 4, not skip ahead
+        assert tracker.optimistic_position <= 5  # Should not skip ahead to position 6+
+
+    def test_skip_reenabled_after_matches(self):
+        """Skip logic should be re-enabled after successful matches."""
+        script = "one two three four five six seven eight"
+        tracker = ScriptTracker(script)
+
+        # Simulate backtrack state
+        tracker.skip_disabled_count = 3
+
+        # Match 3 words - should decrement skip_disabled_count each time
+        tracker.update("one")
+        assert tracker.skip_disabled_count == 2
+
+        tracker.update("one two")
+        assert tracker.skip_disabled_count == 1
+
+        tracker.update("one two three")
+        assert tracker.skip_disabled_count == 0
+
+        # Now skip logic should be re-enabled
+        # Skipping "four" should work now
+        tracker.update("one two three five")  # Skip "four"
+        assert tracker.optimistic_position == 5  # At "six" after matching "five"
+
+    def test_backtrack_disables_skip_logic(self):
+        """Backtrack should disable skip logic to prevent stale word matching."""
+        script = "beginning middle end final words here"
+        tracker = ScriptTracker(script)
+
+        # Advance and set transcript
+        tracker.update("beginning middle end")
+        assert tracker.last_transcription == "beginning middle end"
+        assert tracker.skip_disabled_count == 0
+
+        # Simulate backtrack via validate_position
+        tracker.high_water_mark = 3
+        tracker.optimistic_position = 3
+        # Force a backtrack condition
+        validated_pos, is_backtrack = tracker.validate_position("beginning middle")
+
+        # If backtrack detected, skip logic should be disabled
+        if is_backtrack:
+            assert tracker.skip_disabled_count == 5

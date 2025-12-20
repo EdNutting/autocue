@@ -1,0 +1,5 @@
+logs/
+__pycache__
+autocue.egg-info
+.DS_Store
+.autocue.yaml

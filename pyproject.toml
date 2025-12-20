@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autocue"
+version = "0.1.0"
+description = "Low-latency auto-cue teleprompter with local speech recognition"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "vosk>=0.3.42",
+    "sounddevice>=0.4.6",
+    "websockets>=12.0",
+    "rapidfuzz>=3.6.0",
+    "markdown>=3.5.0",
+    "aiohttp>=3.9.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+autocue = "autocue.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
