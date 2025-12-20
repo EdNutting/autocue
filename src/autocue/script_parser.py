@@ -15,25 +15,27 @@ from html.parser import HTMLParser
 
 
 # Punctuation that gets spoken as words
-# Maps punctuation strings to their spoken form(s)
+# Maps punctuation strings to a list of possible spoken forms
+# Each form is itself a list of words (to handle multi-word expansions)
+# The FIRST entry is the "primary" expansion used for position tracking
 # Note: Characters like # * _ are excluded because they're typically
 # used for Markdown formatting and don't appear in rendered output
-PUNCTUATION_EXPANSIONS: Dict[str, List[str]] = {
-    "&": ["and"],
-    "<": ["less", "than"],
-    ">": ["greater", "than"],
-    "<=": ["less", "than", "or", "equal"],
-    ">=": ["greater", "than", "or", "equal"],
-    "/": ["slash"],
-    "\\": ["backslash"],
-    "~": ["approximately"],
-    "@": ["at"],
-    "+": ["plus"],
-    "-": ["minus"],
-    "=": ["equals"],
-    "%": ["percent"],
-    "^": ["caret"],
-    "|": ["pipe"],
+PUNCTUATION_EXPANSIONS: Dict[str, List[List[str]]] = {
+    "&": [["and"], ["ampersand"]],
+    "<": [["less", "than"]],
+    ">": [["greater", "than"]],
+    "<=": [["less", "than", "or", "equal"]],
+    ">=": [["greater", "than", "or", "equal"]],
+    "/": [["slash"], ["or"], ["forward", "slash"]],
+    "\\": [["backslash"], ["back", "slash"]],
+    "~": [["approximately"], ["tilde"], ["about"]],
+    "@": [["at"]],
+    "+": [["plus"]],
+    "-": [["minus"], ["dash"], ["hyphen"]],
+    "=": [["equals"], ["equal"], ["is"]],
+    "%": [["percent"]],
+    "^": [["caret"], ["to", "the", "power", "of"]],
+    "|": [["pipe"], ["or"]],
 }
 
 # Punctuation that should be silently dropped (not spoken)
@@ -105,18 +107,51 @@ def normalize_word(word: str) -> str:
 def should_expand_punctuation(token: str) -> Optional[List[str]]:
     """Check if a token should be expanded to spoken words.
 
-    Returns the expansion (list of words) or None if no expansion needed.
+    Returns the PRIMARY expansion (first in the list) or None if no expansion needed.
+    The primary expansion is used for position tracking in the speakable words list.
     """
     # First check for exact multi-character matches (e.g., "<=", ">=")
     if token in PUNCTUATION_EXPANSIONS:
-        return PUNCTUATION_EXPANSIONS[token]
+        return PUNCTUATION_EXPANSIONS[token][0]  # Return first (primary) expansion
 
     # Check if the entire token is a single punctuation character
+    stripped = token.strip()
+    if len(stripped) == 1 and stripped in PUNCTUATION_EXPANSIONS:
+        return PUNCTUATION_EXPANSIONS[stripped][0]  # Return first (primary) expansion
+
+    return None
+
+
+def get_all_expansions(token: str) -> Optional[List[List[str]]]:
+    """Get all possible spoken expansions for a punctuation token.
+
+    Returns a list of all possible expansions (each is a list of words),
+    or None if the token has no expansions.
+
+    Example: get_all_expansions("/") returns [["slash"], ["or"], ["forward", "slash"]]
+    """
+    if token in PUNCTUATION_EXPANSIONS:
+        return PUNCTUATION_EXPANSIONS[token]
+
     stripped = token.strip()
     if len(stripped) == 1 and stripped in PUNCTUATION_EXPANSIONS:
         return PUNCTUATION_EXPANSIONS[stripped]
 
     return None
+
+
+def get_expansion_first_words(token: str) -> Optional[List[str]]:
+    """Get the first word of each possible expansion for a punctuation token.
+
+    This is useful for matching - if a spoken word matches any of these,
+    it could be the start of an expansion for this token.
+
+    Example: get_expansion_first_words("/") returns ["slash", "or", "forward"]
+    """
+    expansions = get_all_expansions(token)
+    if expansions is None:
+        return None
+    return [exp[0] for exp in expansions]
 
 
 def is_silent_punctuation(token: str) -> bool:

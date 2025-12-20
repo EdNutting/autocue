@@ -13,7 +13,8 @@ import markdown
 from . import debug_log
 from .script_parser import (
     ParsedScript, parse_script, normalize_word,
-    speakable_to_raw_index, get_speakable_word_list
+    speakable_to_raw_index, get_speakable_word_list,
+    get_all_expansions
 )
 
 logger = logging.getLogger(__name__)
@@ -142,15 +143,38 @@ class ScriptTracker:
     def _speakable_to_raw_index(self, speakable_idx: int) -> int:
         """Convert speakable word index to raw token index for UI."""
         return speakable_to_raw_index(self.parsed_script, speakable_idx)
-                
+
+    def _get_alternative_matches(self, speakable_idx: int) -> List[str]:
+        """Get all possible first words that could match at this speakable position.
+
+        For punctuation expansions (like "/" which can be "slash", "or", or "forward slash"),
+        returns all the first words of each alternative expansion.
+        For regular words, returns just that word.
+        """
+        if speakable_idx >= len(self.parsed_script.speakable_words):
+            return []
+
+        sw = self.parsed_script.speakable_words[speakable_idx]
+
+        # If this is an expansion, get all alternatives from the raw token
+        if sw.is_expansion:
+            raw_token = self.parsed_script.raw_tokens[sw.raw_token_index]
+            expansions = get_all_expansions(raw_token.text)
+            if expansions:
+                # Return first word of each alternative expansion
+                return [exp[0].lower() for exp in expansions]
+
+        # For regular words, just return the word itself
+        return [sw.text]
+
     def _get_window_text(self, start_index: int) -> str:
         """Get a window of words starting at the given index."""
         end_index = min(start_index + self.window_size, len(self.words))
         return ' '.join(self.words[start_index:end_index])
 
     def _word_matches(self, spoken: str, script: str) -> bool:
-        """
-        Check if a spoken word matches a script word (with fuzzy tolerance).
+        """Check if a spoken word matches a script word (with fuzzy tolerance).
+
         Uses stricter matching than window-based matching since we have less context.
         """
         spoken_norm = self._normalize_word(spoken)
@@ -166,6 +190,27 @@ class ScriptTracker:
         # Fuzzy match for speech recognition errors
         # Use stricter threshold (75%) than window matching (65%)
         return fuzz.ratio(spoken_norm, script_norm) >= 75
+
+    def _word_matches_at_position(self, spoken: str, speakable_idx: int) -> bool:
+        """Check if a spoken word matches any alternative at a speakable position.
+
+        For punctuation expansions, checks against all possible spoken forms.
+        For example, "/" could match "slash", "or", or "forward".
+        """
+        spoken_norm = self._normalize_word(spoken)
+        if not spoken_norm:
+            return False
+
+        alternatives = self._get_alternative_matches(speakable_idx)
+        for alt in alternatives:
+            # Exact match
+            if spoken_norm == alt:
+                return True
+            # Fuzzy match
+            if fuzz.ratio(spoken_norm, alt) >= 75:
+                return True
+
+        return False
 
     def _extract_new_words(self, transcription: str) -> List[str]:
         """
@@ -281,8 +326,8 @@ class ScriptTracker:
             # Check if skip logic is disabled (after backtrack)
             skip_allowed = self.skip_disabled_count <= 0
 
-            # Try matching at current position
-            if self._word_matches(spoken_word, self.words[pos]):
+            # Try matching at current position (checks alternative expansions too)
+            if self._word_matches_at_position(spoken_word, pos):
                 debug_log.log_server_word(pos, self.words[pos], f"match \"{spoken_norm}\"")
                 pos += 1
                 words_advanced += 1
@@ -294,7 +339,7 @@ class ScriptTracker:
                     self.skip_disabled_count -= 1
             # Try skipping 1 script word (speaker skipped a word)
             # Only if skip logic is allowed (not recently backtracked)
-            elif skip_allowed and pos + 1 < len(self.words) and self._word_matches(spoken_word, self.words[pos + 1]):
+            elif skip_allowed and pos + 1 < len(self.words) and self._word_matches_at_position(spoken_word, pos + 1):
                 debug_log.log_server_word(pos, self.words[pos], "skip1_missed")
                 debug_log.log_server_word(pos + 1, self.words[pos + 1], f"skip1_match \"{spoken_norm}\"")
                 pos += 2  # Skip the missed word and advance past the matched one
@@ -303,7 +348,7 @@ class ScriptTracker:
                 last_matched_spoken = spoken_word
                 consecutive_misses = 0
             # Try skipping 2 script words
-            elif skip_allowed and pos + 2 < len(self.words) and self._word_matches(spoken_word, self.words[pos + 2]):
+            elif skip_allowed and pos + 2 < len(self.words) and self._word_matches_at_position(spoken_word, pos + 2):
                 debug_log.log_server_word(pos, self.words[pos], "skip2_missed")
                 debug_log.log_server_word(pos + 1, self.words[pos + 1], "skip2_missed")
                 debug_log.log_server_word(pos + 2, self.words[pos + 2], f"skip2_match \"{spoken_norm}\"")
