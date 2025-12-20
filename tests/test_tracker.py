@@ -449,3 +449,169 @@ class TestBacktrackSkipDisable:
         # If backtrack detected, skip logic should be disabled
         if is_backtrack:
             assert tracker.skip_disabled_count == 5
+
+
+class TestAlternativePunctuationMatching:
+    """Tests for matching alternative spoken forms of punctuation."""
+
+    def test_slash_matches_slash(self):
+        """'/' should match when spoken as 'slash'."""
+        tracker = ScriptTracker("Press A / B to continue")
+        # Advance to A
+        tracker.update("press a")
+        pos_before = tracker.optimistic_position
+
+        # Say "slash" for "/"
+        tracker.update("press a slash")
+        pos_after = tracker.optimistic_position
+
+        # Should have advanced past the "/"
+        assert pos_after > pos_before
+
+    def test_slash_matches_or(self):
+        """'/' should match when spoken as 'or'."""
+        tracker = ScriptTracker("Press A / B to continue")
+        tracker.update("press a")
+        pos_before = tracker.optimistic_position
+
+        # Say "or" for "/"
+        tracker.update("press a or")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_slash_matches_forward_slash(self):
+        """'/' should match when spoken as 'forward slash'."""
+        tracker = ScriptTracker("Press A / B to continue")
+        tracker.update("press a")
+        pos_before = tracker.optimistic_position
+
+        # Say "forward" for "/" (first word of "forward slash")
+        tracker.update("press a forward")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_ampersand_matches_and(self):
+        """'&' should match when spoken as 'and'."""
+        tracker = ScriptTracker("Press A & B to continue")
+        tracker.update("press a")
+        pos_before = tracker.optimistic_position
+
+        # Say "and" for "&"
+        tracker.update("press a and")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_ampersand_matches_ampersand(self):
+        """'&' should match when spoken as 'ampersand'."""
+        tracker = ScriptTracker("Press A & B to continue")
+        tracker.update("press a")
+        pos_before = tracker.optimistic_position
+
+        # Say "ampersand" for "&"
+        tracker.update("press a ampersand")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_plus_matches_plus(self):
+        """'+' should match when spoken as 'plus'."""
+        tracker = ScriptTracker("Calculate 5 + 3")
+        tracker.update("calculate five")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("calculate five plus")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_at_matches_at(self):
+        """'@' should match when spoken as 'at'."""
+        tracker = ScriptTracker("Email me @ example dot com")
+        tracker.update("email me")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("email me at")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_percent_matches_percent(self):
+        """'%' should match when spoken as 'percent'."""
+        tracker = ScriptTracker("The rate is 50 % annually")
+        tracker.update("the rate is fifty")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the rate is fifty percent")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_equals_matches_equals(self):
+        """'=' should match when spoken as 'equals'."""
+        tracker = ScriptTracker("So 2 + 2 = 4")
+        tracker.update("so two plus two")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("so two plus two equals")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_equals_matches_is(self):
+        """'=' should match when spoken as 'is'."""
+        tracker = ScriptTracker("So 2 + 2 = 4")
+        tracker.update("so two plus two")
+        pos_before = tracker.optimistic_position
+
+        # Say "is" for "="
+        tracker.update("so two plus two is")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_tilde_matches_approximately(self):
+        """'~' should match when spoken as 'approximately'."""
+        tracker = ScriptTracker("The value is ~ 100")
+        tracker.update("the value is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the value is approximately")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_tilde_matches_about(self):
+        """'~' should match when spoken as 'about'."""
+        tracker = ScriptTracker("The value is ~ 100")
+        tracker.update("the value is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the value is about")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_pipe_matches_or(self):
+        """'|' should match when spoken as 'or'."""
+        tracker = ScriptTracker("Use true | false")
+        tracker.update("use true")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("use true or")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_pipe_matches_pipe(self):
+        """'|' should match when spoken as 'pipe'."""
+        tracker = ScriptTracker("Use true | false")
+        tracker.update("use true")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("use true pipe")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
