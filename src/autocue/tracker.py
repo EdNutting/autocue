@@ -5,12 +5,16 @@ detects when the speaker backtracks to restart a sentence.
 """
 
 import logging
-import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
-from rapidfuzz import fuzz, process
+from typing import List, Tuple
+from rapidfuzz import fuzz
+import markdown
 
 from . import debug_log
+from .script_parser import (
+    ParsedScript, parse_script, normalize_word,
+    speakable_to_raw_index, get_speakable_word_list
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +22,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ScriptPosition:
     """Represents the current position in the script."""
-    word_index: int  # Index of current word in script
+    word_index: int  # Index of current word in script (raw token index for UI)
     line_index: int  # Index of current line
     confidence: float  # Match confidence (0-100)
     matched_words: List[str] = field(default_factory=list)  # Recently matched words
     is_backtrack: bool = False  # True if this is a backtrack from previous position
+    speakable_index: int = 0  # Index in speakable words list (for internal tracking)
 
 
 @dataclass 
@@ -37,12 +42,15 @@ class ScriptLine:
 class ScriptTracker:
     """
     Tracks position in a script based on spoken words.
-    
+
     Uses a sliding window approach with fuzzy matching to find
     where the speaker is in the script. Detects backtracking
     when the speaker restarts a sentence.
+
+    Internally works with "speakable words" (punctuation expanded to words)
+    but returns raw token indices for UI highlighting.
     """
-    
+
     def __init__(
         self,
         script_text: str,
@@ -66,15 +74,25 @@ class ScriptTracker:
         self.match_threshold = match_threshold
         self.backtrack_threshold = backtrack_threshold
         self.max_jump_distance = max_jump_distance
-        
-        # Parse script into lines and words
+
+        # Render markdown to HTML first
+        rendered_html = markdown.markdown(
+            script_text,
+            extensions=['nl2br', 'sane_lists']
+        )
+
+        # Parse script using three-version parser with rendered HTML
+        self.parsed_script: ParsedScript = parse_script(script_text, rendered_html)
+
+        # Speakable words for matching (what the user will say)
+        self.words: List[str] = get_speakable_word_list(self.parsed_script)
+
+        # Build lines for display from raw text (for legacy compatibility)
         self.lines: List[ScriptLine] = []
-        self.words: List[str] = []  # All words, flattened
-        self.word_to_line: List[int] = []  # Map word index to line index
-        
-        self._parse_script(script_text)
-        
-        # Tracking state
+        self.word_to_line: List[int] = []
+        self._build_lines_from_text(script_text)
+
+        # Tracking state (all indices are speakable word indices)
         self.current_word_index = 0
         self.high_water_mark = 0  # Furthest position reached
         self.recent_matches: List[int] = []  # Recent match positions for smoothing
@@ -88,31 +106,42 @@ class ScriptTracker:
         # After backtrack, disable skip logic until we've matched a few words
         # This prevents old transcript words from incorrectly matching future positions
         self.skip_disabled_count = 0  # Number of words to disable skip for
-        
-    def _normalize_word(self, word: str) -> str:
-        """Normalize a word for matching (lowercase, strip punctuation)."""
-        return re.sub(r'[^\w\s]', '', word.lower()).strip()
-        
-    def _parse_script(self, text: str):
-        """Parse script text into lines and words."""
+
+    def _build_lines_from_text(self, text: str):
+        """Build ScriptLine list and word_to_line mapping from raw text.
+
+        This provides line information for display purposes. The word indices
+        here correspond to speakable word indices.
+        """
         lines = text.split('\n')
-        word_index = 0
-        
+        speakable_idx = 0
+
         for line_text in lines:
-            # Skip empty lines but keep them for display
-            line_words = [self._normalize_word(w) for w in line_text.split() if w.strip()]
-            line_words = [w for w in line_words if w]  # Remove empty after normalization
-            
+            # Normalize line words the same way as the parser
+            line_words = [normalize_word(w) for w in line_text.split() if w.strip()]
+            line_words = [w for w in line_words if w]
+
+            start_idx = speakable_idx
+
+            # Map each speakable word to this line
+            for _ in line_words:
+                if speakable_idx < len(self.words):
+                    self.word_to_line.append(len(self.lines))
+                    speakable_idx += 1
+
             self.lines.append(ScriptLine(
                 text=line_text,
                 words=line_words,
-                word_start_index=word_index
+                word_start_index=start_idx
             ))
-            
-            for word in line_words:
-                self.words.append(word)
-                self.word_to_line.append(len(self.lines) - 1)
-                word_index += 1
+
+    def _normalize_word(self, word: str) -> str:
+        """Normalize a word for matching (lowercase, strip punctuation)."""
+        return normalize_word(word)
+
+    def _speakable_to_raw_index(self, speakable_idx: int) -> int:
+        """Convert speakable word index to raw token index for UI."""
+        return speakable_to_raw_index(self.parsed_script, speakable_idx)
                 
     def _get_window_text(self, start_index: int) -> str:
         """Get a window of words starting at the given index."""
@@ -438,12 +467,16 @@ class ScriptTracker:
         # Store transcription for next comparison
         self.last_transcription = transcription
 
+        # Convert speakable index to raw token index for UI
+        raw_index = self._speakable_to_raw_index(self.optimistic_position)
+
         return ScriptPosition(
-            word_index=self.optimistic_position,
+            word_index=raw_index,  # Raw token index for UI highlighting
             line_index=self._word_to_line_index(self.optimistic_position),
             confidence=100.0 if words_advanced > 0 else 0.0,
             matched_words=new_words[-3:] if new_words else [],
-            is_backtrack=is_backtrack
+            is_backtrack=is_backtrack,
+            speakable_index=self.optimistic_position  # Internal tracking index
         )
 
     def validate_position(self, transcription: str) -> Tuple[int, bool]:
@@ -652,10 +685,12 @@ class ScriptTracker:
         
     def _current_position(self) -> ScriptPosition:
         """Get the current position without updating."""
+        raw_index = self._speakable_to_raw_index(self.current_word_index)
         return ScriptPosition(
-            word_index=self.current_word_index,
+            word_index=raw_index,
             line_index=self._word_to_line_index(self.current_word_index),
-            confidence=0.0
+            confidence=0.0,
+            speakable_index=self.current_word_index
         )
         
     def reset(self):
@@ -718,6 +753,8 @@ class ScriptTracker:
     @property
     def progress(self) -> float:
         """Get overall progress through the script (0.0 to 1.0)."""
-        if not self.words:
+        total_raw = self.parsed_script.total_raw_tokens
+        if total_raw == 0:
             return 0.0
-        return self.current_word_index / len(self.words)
+        raw_index = self._speakable_to_raw_index(self.current_word_index)
+        return raw_index / total_raw

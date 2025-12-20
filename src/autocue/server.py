@@ -7,16 +7,143 @@ import asyncio
 import json
 import logging
 import os
+import re
 import markdown
+from html.parser import HTMLParser
 from pathlib import Path
-from typing import Optional, Set
+from typing import Optional, Set, List, Tuple, Dict
 from aiohttp import web
 import weakref
 
 from .config import load_config, save_config, update_config_display
 from . import debug_log
+from .script_parser import (
+    ParsedScript, parse_script, RawToken,
+    PUNCTUATION_EXPANSIONS, is_silent_punctuation
+)
 
 logger = logging.getLogger(__name__)
+
+
+class WordIndexingHTMLParser(HTMLParser):
+    """HTML parser that wraps text words with span elements containing raw token indices.
+
+    Uses the ParsedScript to map each raw token to its index, ensuring the UI
+    highlights match what the tracker returns.
+    """
+
+    def __init__(self, parsed_script: ParsedScript):
+        super().__init__()
+        self.parsed_script = parsed_script
+        # Build a map from raw token text (lowercased) at each position to its index
+        # This handles the case where the same word appears multiple times
+        self.raw_token_iter = iter(parsed_script.raw_tokens)
+        self.current_raw_token: Optional[RawToken] = None
+        self._advance_token()
+        self.output = []
+        self.tag_stack = []
+
+    def _advance_token(self):
+        """Move to the next raw token."""
+        try:
+            self.current_raw_token = next(self.raw_token_iter)
+        except StopIteration:
+            self.current_raw_token = None
+
+    def _token_matches(self, text: str) -> bool:
+        """Check if the current raw token matches the given text."""
+        if self.current_raw_token is None:
+            return False
+        # Compare normalized versions
+        return self.current_raw_token.text.lower() == text.lower()
+
+    def handle_starttag(self, tag, attrs):
+        attrs_str = ''.join(f' {k}="{v}"' for k, v in attrs)
+        self.output.append(f'<{tag}{attrs_str}>')
+        self.tag_stack.append(tag)
+
+    def handle_endtag(self, tag):
+        self.output.append(f'</{tag}>')
+        if self.tag_stack and self.tag_stack[-1] == tag:
+            self.tag_stack.pop()
+
+    def handle_startendtag(self, tag, attrs):
+        attrs_str = ''.join(f' {k}="{v}"' for k, v in attrs)
+        self.output.append(f'<{tag}{attrs_str}/>')
+
+    def handle_data(self, data):
+        """Process text data, wrapping words with indexed spans."""
+        if not data.strip():
+            # Preserve whitespace-only text
+            self.output.append(data)
+            return
+
+        # Split text into words and whitespace, preserving order
+        parts = re.split(r'(\s+)', data)
+        result = []
+
+        for part in parts:
+            if not part:
+                continue
+            if part.isspace():
+                # Preserve whitespace as-is
+                result.append(part)
+            else:
+                # Escape HTML entities
+                escaped = part.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+                # Check if this matches the current raw token
+                if self._token_matches(part):
+                    # Wrap with span using the raw token index
+                    idx = self.current_raw_token.index
+                    result.append(f'<span class="word" data-word-index="{idx}">{escaped}</span>')
+                    self._advance_token()
+                else:
+                    # No matching token - output as-is (shouldn't happen normally)
+                    result.append(escaped)
+
+        self.output.append(''.join(result))
+
+    def handle_entityref(self, name):
+        self.output.append(f'&{name};')
+
+    def handle_charref(self, name):
+        self.output.append(f'&#{name};')
+
+    def get_output(self) -> str:
+        return ''.join(self.output)
+
+
+def render_script_with_word_indices(script_text: str) -> Tuple[str, int, ParsedScript]:
+    """Render script to HTML with each word wrapped in an indexed span.
+
+    Uses the three-version script parser to ensure:
+    - Raw tokens get unique indices for UI highlighting
+    - Speakable words (with punctuation expansion) are used for matching
+    - Indices map correctly between tracker and UI
+
+    Args:
+        script_text: The raw script text (may contain Markdown)
+
+    Returns:
+        Tuple of (html_with_word_spans, total_raw_tokens, parsed_script)
+    """
+    # Step 1: Render markdown to HTML
+    raw_html = markdown.markdown(
+        script_text,
+        extensions=['nl2br', 'sane_lists']
+    )
+
+    # Step 2: Parse script using three-version parser with rendered HTML
+    # This extracts tokens from what actually appears in the HTML
+    parsed_script = parse_script(script_text, raw_html)
+
+    # Step 3: Parse HTML and wrap words with indexed spans
+    parser = WordIndexingHTMLParser(parsed_script)
+    parser.feed(raw_html)
+    indexed_html = parser.get_output()
+
+    return indexed_html, parsed_script.total_raw_tokens, parsed_script
 
 
 class WebServer:
@@ -52,6 +179,7 @@ class WebServer:
         # Current state
         self.script_text: str = ""
         self.script_html: str = ""
+        self.total_words: int = 0
         self._reset_requested: bool = False
         self._jump_requested: Optional[int] = None
 
@@ -90,6 +218,7 @@ class WebServer:
                 "type": "init",
                 "script": self.script_text,
                 "scriptHtml": self.script_html,
+                "totalWords": self.total_words,
                 "settings": self.settings
             })
             
@@ -111,15 +240,16 @@ class WebServer:
         
         if msg_type == "script":
             self.script_text = data.get("text", "")
-            self.script_html = markdown.markdown(
-                self.script_text,
-                extensions=['nl2br', 'sane_lists']
+            # Render with word indices embedded in the HTML
+            self.script_html, self.total_words, _ = render_script_with_word_indices(
+                self.script_text
             )
             # Broadcast to all clients
             await self.broadcast({
                 "type": "script_updated",
                 "script": self.script_text,
-                "scriptHtml": self.script_html
+                "scriptHtml": self.script_html,
+                "totalWords": self.total_words
             })
             
         elif msg_type == "settings":
@@ -176,14 +306,15 @@ class WebServer:
         """Handle script upload via POST."""
         data = await request.json()
         self.script_text = data.get("text", "")
-        self.script_html = markdown.markdown(
-            self.script_text,
-            extensions=['nl2br', 'sane_lists']
+        # Render with word indices embedded in the HTML
+        self.script_html, self.total_words, _ = render_script_with_word_indices(
+            self.script_text
         )
         await self.broadcast({
             "type": "script_updated",
             "script": self.script_text,
-            "scriptHtml": self.script_html
+            "scriptHtml": self.script_html,
+            "totalWords": self.total_words
         })
         return web.json_response({"status": "ok"})
         
@@ -292,7 +423,6 @@ class WebServer:
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600&family=Inter:wght@400;500;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -789,12 +919,11 @@ The prompter will track your speech and scroll automatically."></textarea>
 
     <script>
         let ws = null;
-        let scriptLines = [];
-        let lineWordStarts = [];  // Starting word index for each line
-        let totalWords = 0;
+        let totalWords = 0;  // Set by server
         let currentWordIndex = 0;
         let settings = {};
         let isPaused = false;
+        let scriptHtml = '';  // Pre-indexed HTML from server
         
         // Connect WebSocket
         function connect() {
@@ -818,12 +947,21 @@ The prompter will track your speech and scroll automatically."></textarea>
             switch (data.type) {
                 case 'init':
                     document.getElementById('script-input').value = data.script || '';
+                    scriptHtml = data.scriptHtml || '';
+                    totalWords = data.totalWords || 0;
                     settings = data.settings || {};
                     applySettings(settings);
                     break;
-                    
+
                 case 'script_updated':
                     document.getElementById('script-input').value = data.script;
+                    scriptHtml = data.scriptHtml || '';
+                    totalWords = data.totalWords || 0;
+                    // If we were waiting to start the prompter, do it now
+                    if (waitingForScript) {
+                        waitingForScript = false;
+                        activatePrompterMode();
+                    }
                     break;
                     
                 case 'settings_updated':
@@ -897,9 +1035,8 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
         }
 
-        // Parsed markdown content with word tracking
-        let parsedContent = null;
-        let wordToElement = new Map();
+        // Flag to indicate we're waiting for server to send indexed HTML
+        let waitingForScript = false;
 
         function startPrompter() {
             const script = document.getElementById('script-input').value.trim();
@@ -909,36 +1046,19 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
 
             // Send script and settings to server
+            // The server will respond with indexed HTML in script_updated message
             settings = getSettings();
+            waitingForScript = true;
             ws.send(JSON.stringify({ type: 'script', text: script }));
             ws.send(JSON.stringify({ type: 'settings', settings: settings }));
+        }
 
-            // Parse script into lines and calculate word indices (for tracking)
-            // This must match the server's word counting for position sync
-            // Normalize words the same way Python does: remove non-word chars, filter empty
-            function normalizeWord(word) {
-                return word.toLowerCase().replace(/[^\\w\\s]/g, '').trim();
-            }
-            scriptLines = script.split('\\n');
-            lineWordStarts = [];
-            totalWords = 0;
-            for (let i = 0; i < scriptLines.length; i++) {
-                lineWordStarts.push(totalWords);
-                const words = scriptLines[i].split(/\\s+/)
-                    .map(w => normalizeWord(w))
-                    .filter(w => w);
-                totalWords += words.length;
-            }
-
-            // Parse markdown and create word-wrapped HTML
-            // Uses plain-text word indices to ensure sync with server
-            parseMarkdownWithWords(script);
-
+        function activatePrompterMode() {
             // Switch to prompter mode
             document.getElementById('editor-container').classList.add('hidden');
             document.getElementById('prompter-container').classList.add('active');
 
-            // Initial render
+            // Initial render using server-provided indexed HTML
             currentWordIndex = 0;
             renderScriptByWordIndex(0);
 
@@ -946,78 +1066,16 @@ The prompter will track your speech and scroll automatically."></textarea>
             applySettings(settings);
         }
 
-        function parseMarkdownWithWords(script) {
-            // Configure marked for proper rendering
-            marked.setOptions({
-                breaks: true,
-                gfm: true
-            });
-
-            // Parse markdown to HTML
-            const rawHtml = marked.parse(script);
-
-            // Create a temporary container to manipulate the HTML
-            const temp = document.createElement('div');
-            temp.innerHTML = rawHtml;
-
-            // Walk through all text nodes and wrap words in spans
-            // Word indices must match the server's plain-text-based counting
-            let globalWordIndex = 0;
-            wordToElement.clear();
-
-            function processNode(node) {
-                if (node.nodeType === Node.TEXT_NODE) {
-                    const text = node.textContent;
-                    if (!text.trim()) return;
-
-                    const parts = text.split(/(\\s+)/);
-                    const fragment = document.createDocumentFragment();
-
-                    for (const part of parts) {
-                        if (part.trim()) {
-                            const span = document.createElement('span');
-                            span.className = 'word';
-                            span.dataset.wordIndex = globalWordIndex;
-                            span.textContent = part;
-                            fragment.appendChild(span);
-                            globalWordIndex++;
-                        } else if (part) {
-                            fragment.appendChild(document.createTextNode(part));
-                        }
-                    }
-
-                    node.parentNode.replaceChild(fragment, node);
-                } else if (node.nodeType === Node.ELEMENT_NODE) {
-                    // Process children (make a copy of childNodes since we modify the DOM)
-                    const children = Array.from(node.childNodes);
-                    for (const child of children) {
-                        processNode(child);
-                    }
-                }
-            }
-
-            processNode(temp);
-            parsedContent = temp.innerHTML;
-            // Note: totalWords is set from plain-text parsing in startPrompter()
-            // to ensure sync with server. The globalWordIndex here should match.
-        }
-
         function exitPrompter() {
             document.getElementById('editor-container').classList.remove('hidden');
             document.getElementById('prompter-container').classList.remove('active');
         }
 
-        function renderScript(lineIndex, wordOffset) {
-            // Convert line/offset to word index and render
-            const wordIndex = (lineWordStarts[lineIndex] || 0) + wordOffset;
-            renderScriptByWordIndex(wordIndex);
-        }
-
         function renderScriptByWordIndex(wordIndex) {
             const display = document.getElementById('script-display');
 
-            // Render the full markdown content
-            display.innerHTML = parsedContent;
+            // Render the pre-indexed HTML from server
+            display.innerHTML = scriptHtml;
 
             // Update word styling based on current position
             display.querySelectorAll('.word').forEach(el => {
@@ -1041,32 +1099,6 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
         }
 
-        function renderLineWords(lineText, lineStartWordIndex, highlightOffset) {
-            // Legacy function - kept for compatibility
-            const parts = lineText.split(/(\\s+)/);
-            let wordHtml = '';
-            let wordCount = 0;
-
-            for (const part of parts) {
-                if (part.trim()) {
-                    const globalWordIndex = lineStartWordIndex + wordCount;
-                    let wordClass = 'word';
-                    if (highlightOffset >= 0) {
-                        if (wordCount < highlightOffset) {
-                            wordClass += ' spoken';
-                        } else if (wordCount === highlightOffset) {
-                            wordClass += ' current';
-                        }
-                    }
-                    wordHtml += `<span class="${wordClass}" data-word-index="${globalWordIndex}">${escapeHtml(part)}</span>`;
-                    wordCount++;
-                } else {
-                    wordHtml += part;
-                }
-            }
-            return wordHtml;
-        }
-
         function handleWordClick(e) {
             const wordIndex = parseInt(e.target.dataset.wordIndex, 10);
             if (!isNaN(wordIndex)) {
@@ -1076,45 +1108,27 @@ The prompter will track your speech and scroll automatically."></textarea>
 
         function jumpToWord(wordIndex) {
             currentWordIndex = wordIndex;
-            // Find which line this word is on
-            let lineIndex = 0;
-            for (let i = 0; i < lineWordStarts.length; i++) {
-                if (lineWordStarts[i] <= wordIndex) {
-                    lineIndex = i;
-                } else {
-                    break;
-                }
-            }
-            const wordOffset = wordIndex - lineWordStarts[lineIndex];
-            renderScript(lineIndex, wordOffset);
+            renderScriptByWordIndex(wordIndex);
 
             // Update progress bar
-            const progress = (wordIndex / totalWords) * 100;
+            const progress = totalWords > 0 ? (wordIndex / totalWords) * 100 : 0;
             document.getElementById('progress-bar').style.width = progress + '%';
         }
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
+
         function updatePosition(data) {
             if (isPaused) return;
 
+            // Use wordIndex directly - no line/offset conversion needed
+            // since we use server-provided word indices in the HTML
             currentWordIndex = data.wordIndex;
+            renderScriptByWordIndex(data.wordIndex);
 
-            // Calculate the word index we'll actually highlight (using lineWordStarts)
-            const calculatedWordIndex = (lineWordStarts[data.lineIndex] || 0) + data.wordOffset;
-
-            renderScript(data.lineIndex, data.wordOffset);
-
-            // Report what word we're actually highlighting back to server
+            // Report what word we're highlighting back to server for debugging
             const currentEl = document.querySelector('.word.current');
             if (currentEl && ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: 'frontend_highlight',
-                    wordIndex: calculatedWordIndex,
+                    wordIndex: data.wordIndex,
                     word: currentEl.textContent,
                     sourceLine: data.lineIndex,
                     sourceOffset: data.wordOffset,
@@ -1147,10 +1161,10 @@ The prompter will track your speech and scroll automatically."></textarea>
                 document.getElementById('transcript').textContent = data.transcript;
             }
         }
-        
+
         function resetDisplay() {
             currentWordIndex = 0;
-            renderScript(0, 0);
+            renderScriptByWordIndex(0);
             document.getElementById('progress-bar').style.width = '0%';
         }
         
