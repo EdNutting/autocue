@@ -323,6 +323,24 @@ class TestExpandMixedAlphanumeric:
         # Should spell out letters
         assert any(exp[0] == "i" for exp in expansions)
 
+    def test_500ms_milliseconds(self):
+        """500ms should expand to 'five hundred milliseconds'."""
+        expansions = expand_mixed_alphanumeric("500ms")
+
+        # Should have letter-by-letter form with number expanded
+        assert any(
+            "five" in exp and "hundred" in exp and "m" in exp and "s" in exp
+            for exp in expansions
+        )
+        # Should have milliseconds form
+        assert any("milliseconds" in exp for exp in expansions)
+        # The full expansion should include "five hundred milliseconds"
+        assert any(
+            exp == ["five", "hundred", "milliseconds"] or
+            exp == ["five", "hundred", "millisecond"]
+            for exp in expansions
+        )
+
 
 class TestGetNumberExpansions:
     """Tests for the main get_number_expansions entry point."""
@@ -542,6 +560,24 @@ class TestIntegrationWithParser:
         # Raw token 0 ("100") should map to speakable indices [0, 1] ("one", "hundred")
         assert 0 in parsed.raw_to_speakable
         assert len(parsed.raw_to_speakable[0]) == 2
+
+    def test_500ms_in_script(self):
+        """500ms in script should expand to 'five hundred' + unit."""
+        from src.autocue.script_parser import parse_script
+        import markdown
+
+        script = "The latency is 500ms"
+        html = markdown.markdown(script, extensions=['nl2br', 'sane_lists'])
+        parsed = parse_script(script, html)
+
+        words = [sw.text for sw in parsed.speakable_words]
+
+        # Should have expanded 500 to "five hundred"
+        assert "five" in words
+        assert "hundred" in words
+        # Should have the unit (primary expansion is letter-by-letter)
+        assert "m" in words
+        assert "s" in words
 
 
 class TestEdgeCases:
