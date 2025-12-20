@@ -130,7 +130,11 @@ class AutocueApp:
             # Process audio
             audio_chunk = self.audio.get_chunk(timeout=0.05)
             if audio_chunk and self.tracker:
-                result = self.transcriber.process_audio(audio_chunk)
+                # Run blocking Vosk transcription in thread pool to keep event loop responsive
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None, self.transcriber.process_audio, audio_chunk
+                )
 
                 if result and result.text:
                     # Update position using optimistic matching (fast path)
