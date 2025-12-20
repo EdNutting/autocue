@@ -615,3 +615,227 @@ class TestAlternativePunctuationMatching:
         pos_after = tracker.optimistic_position
 
         assert pos_after > pos_before
+
+
+class TestAlternativeNumberMatching:
+    """Tests for matching alternative spoken forms of numbers."""
+
+    def test_hundred_matches_one_hundred(self):
+        """'100' should match when spoken as 'one hundred'."""
+        tracker = ScriptTracker("The value is 100 dollars")
+        tracker.update("the value is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the value is one hundred")
+        pos_after = tracker.optimistic_position
+
+        # Should have advanced past "100"
+        assert pos_after > pos_before
+
+    def test_hundred_matches_a_hundred(self):
+        """'100' should match when spoken as 'a hundred'."""
+        tracker = ScriptTracker("The value is 100 dollars")
+        tracker.update("the value is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the value is a hundred")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_thousand_matches_one_thousand(self):
+        """'1000' should match when spoken as 'one thousand'."""
+        tracker = ScriptTracker("There are 1000 items")
+        tracker.update("there are")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("there are one thousand")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_thousand_matches_a_thousand(self):
+        """'1000' should match when spoken as 'a thousand'."""
+        tracker = ScriptTracker("There are 1000 items")
+        tracker.update("there are")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("there are a thousand")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_eleven_hundred(self):
+        """'1100' should match when spoken as 'eleven hundred'."""
+        tracker = ScriptTracker("The count is 1100 total")
+        tracker.update("the count is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the count is eleven hundred")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_decimal_point_form(self):
+        """'3.14' should match when spoken as 'three point one four'."""
+        tracker = ScriptTracker("Pi is 3.14 approximately")
+        tracker.update("pi is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("pi is three point one four")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_decimal_oh_form(self):
+        """'3.07' should match when spoken as 'three point oh seven'."""
+        tracker = ScriptTracker("The value is 3.07 units")
+        tracker.update("the value is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the value is three point oh seven")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_decimal_point_only(self):
+        """'0.3' should match when spoken as 'point three'."""
+        tracker = ScriptTracker("The ratio is 0.3 today")
+        tracker.update("the ratio is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the ratio is point three")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_half_fraction(self):
+        """'0.5' should match when spoken as 'half'."""
+        tracker = ScriptTracker("Take 0.5 of the total")
+        tracker.update("take")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("take half")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_ordinal_first(self):
+        """'1st' should match when spoken as 'first'."""
+        tracker = ScriptTracker("This is the 1st test")
+        tracker.update("this is the")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("this is the first")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_ordinal_second(self):
+        """'2nd' should match when spoken as 'second'."""
+        tracker = ScriptTracker("This is the 2nd item")
+        tracker.update("this is the")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("this is the second")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_ordinal_twenty_third(self):
+        """'23rd' should match when spoken as 'twenty third'."""
+        tracker = ScriptTracker("It is the 23rd day")
+        tracker.update("it is the")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("it is the twenty third")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_mixed_4k(self):
+        """'4K' should match when spoken as 'four k'."""
+        tracker = ScriptTracker("The display is 4K resolution")
+        tracker.update("the display is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the display is four k")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_mixed_4k_thousand(self):
+        """'4K' should match when spoken as 'four thousand'."""
+        tracker = ScriptTracker("The display is 4K resolution")
+        tracker.update("the display is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the display is four thousand")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_mixed_100gb(self):
+        """'100GB' should match when spoken as 'one hundred gigabytes'."""
+        tracker = ScriptTracker("Storage is 100GB available")
+        tracker.update("storage is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("storage is one hundred gigabytes")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_mixed_m3(self):
+        """'M3' should match when spoken as 'm three'."""
+        tracker = ScriptTracker("The M3 processor is fast")
+        tracker.update("the")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the m three")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_mixed_5m_metres(self):
+        """'5m' should match when spoken as 'five metres'."""
+        tracker = ScriptTracker("The distance is 5m away")
+        tracker.update("the distance is")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("the distance is five metres")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_comma_separated_number(self):
+        """'1,000' should match when spoken as 'one thousand'."""
+        tracker = ScriptTracker("We have 1,000 users")
+        tracker.update("we have")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("we have one thousand")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_eleven_thousand_comma(self):
+        """'11,000' should match when spoken as 'eleven thousand'."""
+        tracker = ScriptTracker("There are 11,000 participants")
+        tracker.update("there are")
+        pos_before = tracker.optimistic_position
+
+        tracker.update("there are eleven thousand")
+        pos_after = tracker.optimistic_position
+
+        assert pos_after > pos_before
+
+    def test_number_in_context(self):
+        """Numbers should work correctly in full sentences."""
+        tracker = ScriptTracker("The M3 processor has 25 billion transistors")
+
+        # Advance through the sentence
+        tracker.update("the m three processor has twenty five billion transistors")
+
+        # Should have progressed through most of the script
+        assert tracker.progress > 0.5

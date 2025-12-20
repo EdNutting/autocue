@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from typing import List, Dict, Optional
 from html.parser import HTMLParser
 
+from .number_expander import is_number_token, get_number_expansions
+
 
 # Punctuation that gets spoken as words
 # Maps punctuation strings to a list of possible spoken forms
@@ -123,19 +125,26 @@ def should_expand_punctuation(token: str) -> Optional[List[str]]:
 
 
 def get_all_expansions(token: str) -> Optional[List[List[str]]]:
-    """Get all possible spoken expansions for a punctuation token.
+    """Get all possible spoken expansions for a punctuation or number token.
 
     Returns a list of all possible expansions (each is a list of words),
     or None if the token has no expansions.
 
     Example: get_all_expansions("/") returns [["slash"], ["or"], ["forward", "slash"]]
+    Example: get_all_expansions("100") returns [["one", "hundred"], ["a", "hundred"], ...]
     """
+    # Check punctuation first
     if token in PUNCTUATION_EXPANSIONS:
         return PUNCTUATION_EXPANSIONS[token]
 
     stripped = token.strip()
     if len(stripped) == 1 and stripped in PUNCTUATION_EXPANSIONS:
         return PUNCTUATION_EXPANSIONS[stripped]
+
+    # Check for number expansions
+    number_expansions = get_number_expansions(token)
+    if number_expansions:
+        return number_expansions
 
     return None
 
@@ -238,6 +247,36 @@ def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript
                 raw_to_speakable[raw_index].append(speakable_index)
                 speakable_to_raw[speakable_index] = raw_index
                 speakable_index += 1
+        elif is_number_token(token):
+            # Number token - expand using primary (first) expansion
+            number_expansions = get_number_expansions(token)
+            if number_expansions:
+                primary_expansion = number_expansions[0]
+                for exp_pos, exp_word in enumerate(primary_expansion):
+                    sw = SpeakableWord(
+                        text=exp_word.lower(),
+                        raw_token_index=raw_index,
+                        is_expansion=True,
+                        expansion_position=exp_pos
+                    )
+                    speakable_words.append(sw)
+                    raw_to_speakable[raw_index].append(speakable_index)
+                    speakable_to_raw[speakable_index] = raw_index
+                    speakable_index += 1
+            else:
+                # Fallback: treat as normal word (shouldn't happen)
+                normalized = normalize_word(token)
+                if normalized:
+                    sw = SpeakableWord(
+                        text=normalized,
+                        raw_token_index=raw_index,
+                        is_expansion=False,
+                        expansion_position=0
+                    )
+                    speakable_words.append(sw)
+                    raw_to_speakable[raw_index].append(speakable_index)
+                    speakable_to_raw[speakable_index] = raw_index
+                    speakable_index += 1
         elif is_silent_punctuation(token):
             # Pure punctuation - no speakable word, but still a raw token
             # (raw_to_speakable[raw_index] remains empty list)
