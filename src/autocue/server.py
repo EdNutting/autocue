@@ -21,6 +21,7 @@ from .script_parser import (
     ParsedScript, parse_script, RawToken,
     PUNCTUATION_EXPANSIONS, is_silent_punctuation
 )
+import sounddevice as sd
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +231,7 @@ class WebServer:
         self.app.router.add_post('/settings', self._handle_settings)
         self.app.router.add_get('/settings', self._handle_get_settings)
         self.app.router.add_post('/save-config', self._handle_save_config)
+        self.app.router.add_get('/audio-devices', self._handle_get_audio_devices)
         
     async def _handle_index(self, request: web.Request) -> web.Response:
         """Serve the main HTML page."""
@@ -246,13 +248,15 @@ class WebServer:
         
         try:
             # Send current state
+            config = load_config()
             await ws.send_json({
                 "type": "init",
                 "script": self.script_text,
                 "scriptHtml": self.script_html,
                 "totalWords": self.total_words,
                 "settings": self.settings,
-                "samples": self._get_sample_scripts()
+                "samples": self._get_sample_scripts(),
+                "audioDevice": config.get("audio_device")
             })
             
             async for msg in ws:
@@ -357,6 +361,37 @@ class WebServer:
             # Toggle transcript recording
             enable = data.get("enable", False)
             self._transcript_toggle_requested = enable
+
+        elif msg_type == "set_audio_device":
+            # Update audio device in config
+            device_index = data.get("deviceIndex")
+            try:
+                config = load_config()
+                config["audio_device"] = device_index
+                if save_config(config):
+                    await ws.send_json({
+                        "type": "audio_device_updated",
+                        "success": True,
+                        "deviceIndex": device_index
+                    })
+                    # Broadcast to all clients
+                    await self.broadcast({
+                        "type": "audio_device_updated",
+                        "success": True,
+                        "deviceIndex": device_index
+                    })
+                else:
+                    await ws.send_json({
+                        "type": "audio_device_updated",
+                        "success": False,
+                        "error": "Failed to save config"
+                    })
+            except Exception as e:
+                await ws.send_json({
+                    "type": "audio_device_updated",
+                    "success": False,
+                    "error": str(e)
+                })
             
     async def _handle_script_upload(self, request: web.Request) -> web.Response:
         """Handle script upload via POST."""
@@ -405,7 +440,29 @@ class WebServer:
                 {"status": "error", "message": str(e)},
                 status=500
             )
-        
+
+    async def _handle_get_audio_devices(self, request: web.Request) -> web.Response:
+        """Get list of available audio input devices."""
+        try:
+            devices = sd.query_devices()
+            device_list = []
+            for i, device in enumerate(devices):
+                if device['max_input_channels'] > 0:
+                    device_list.append({
+                        "index": i,
+                        "name": device['name'],
+                        "channels": device['max_input_channels']
+                    })
+            return web.json_response({
+                "status": "ok",
+                "devices": device_list
+            })
+        except Exception as e:
+            return web.json_response(
+                {"status": "error", "message": str(e)},
+                status=500
+            )
+
     async def broadcast(self, message: dict):
         """Send a message to all connected WebSocket clients."""
         if not self.websockets:
