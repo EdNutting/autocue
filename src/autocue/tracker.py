@@ -368,6 +368,26 @@ class ScriptTracker:
         # Process words speculatively
         self._process_words(speculative_state)
 
+        # If words remain unmatched, try recovery by dropping words one at a time
+        # This helps recover from single misheard/misspoken words in partial results
+        while speculative_state.word_queue:
+            initial_queue_len = len(speculative_state.word_queue)
+            print(
+                f"Partial: {initial_queue_len} unmatched words remain, attempting recovery")
+
+            # Drop the first unmatched word and try again
+            dropped_word = speculative_state.word_queue.pop(0)
+            print(f"Partial: Dropping word '{dropped_word}' and retrying")
+
+            # Try processing remaining words
+            if speculative_state.word_queue:
+                self._process_words(speculative_state)
+
+                # If we made progress (queue got shorter), keep trying
+                if len(speculative_state.word_queue) < initial_queue_len - 1:
+                    print(
+                        f"Partial: Recovery successful, {initial_queue_len - 1 - len(speculative_state.word_queue)} more words matched")
+
         # Update speculative display position (never goes backwards)
         if speculative_state.optimistic_position > self.speculative_display_position:
             print(
