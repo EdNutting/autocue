@@ -680,7 +680,11 @@ class ScriptTracker:
         # Before considering a backtrack, check if the transcript words
         # match what we expect at/near the optimistic position.
         # If they do, trust the optimistic position.
-        transcript_matches = self._transcript_matches_position(transcript_words, self.optimistic_position)
+        transcript_matches = (
+            self._transcript_matches_position(
+                transcript_words, self.optimistic_position
+            )
+        )
         if transcript_matches:
             return self.optimistic_position, False
 

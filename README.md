@@ -41,6 +41,7 @@ Primarily developed and tested on macOS (M3), but should work on Windows and Lin
 ### 1. Install PortAudio (required for microphone access)
 
 **macOS:**
+
 ```bash
 brew install portaudio
 ```
@@ -48,16 +49,19 @@ brew install portaudio
 **Windows:**
 
 Option A - Using pip (recommended):
+
 ```bash
 pip install pyaudio
 ```
 
 Option B - Using conda/anaconda:
+
 ```bash
 conda install portaudio
 ```
 
 **Linux (Ubuntu/Debian):**
+
 ```bash
 sudo apt-get install portaudio19-dev
 ```
@@ -77,6 +81,7 @@ autocue --download-model
 ```
 
 This downloads the "small" model (~40MB). For better accuracy, use:
+
 ```bash
 autocue --download-model --model medium
 ```
@@ -89,7 +94,7 @@ autocue --download-model --model medium
 autocue
 ```
 
-Then open http://127.0.0.1:8765 in your browser.
+Then open <http://127.0.0.1:8000> in your browser.
 
 ### Workflow
 
@@ -102,15 +107,15 @@ Then open http://127.0.0.1:8765 in your browser.
 
 ### Keyboard Shortcuts (in prompter mode)
 
-| Key | Action |
-|-----|--------|
-| `Escape` | Exit prompter mode |
-| `Space` | Pause/resume tracking |
-| `R` | Reset to start of script |
+| Key      | Action                   |
+|----------|--------------------------|
+| `Escape` | Exit prompter mode       |
+| `Space`  | Pause/resume tracking    |
+| `R`      | Reset to start of script |
 
 ### Command Line Options
 
-```
+```text
 autocue --help
 
 Options:
@@ -118,7 +123,7 @@ Options:
                         Vosk model size (default: small)
   --model-path PATH     Path to custom Vosk model directory
   --host HOST           Web server host (default: 127.0.0.1)
-  --port, -p PORT       Web server port (default: 8765)
+  --port, -p PORT       Web server port (default: 8000)
   --device, -d INDEX    Audio input device index
   --list-devices        List available audio input devices
   --download-model      Download the specified model
@@ -147,9 +152,9 @@ Then access via your Mac's IP address from another device.
 
 The settings panel lets you configure:
 
-| Setting | Description |
-|---------|-------------|
-| **Font Size** | Text size in pixels (24-120) |
+| Setting       | Description                                     |
+|---------------|------------------------------------------------|
+| **Font Size** | Text size in pixels (24-120)                   |
 | **Font** | Choose from several readable fonts |
 | **Line Height** | Spacing between lines |
 | **Past Lines** | Lines of already-spoken text to show (default: 1) |
@@ -197,13 +202,13 @@ autocue --list-devices
 
 ### WebSocket connection issues
 
-- Check that port 8765 is not in use by another application
+- Check that port 8000 is not in use by another application
 - Try a different port: `autocue --port 8766`
 
 ## Model Comparison
 
-| Model | Size | Accuracy | Latency | Recommended For |
-|-------|------|----------|---------|-----------------|
-| small | ~40MB | Good | Fastest | Most use cases |
-| medium | ~1.8GB | Better | Fast | Noisy environments |
-| large | ~2.3GB | Best | Slower | Maximum accuracy |
+| Model  | Size   | Accuracy | Latency | Recommended For    |
+|--------|--------|----------|---------|-------------------|
+| small  | ~40MB  | Good     | Fastest | Most use cases    |
+| medium | ~1.8GB | Better   | Fast    | Noisy environments |
+| large  | ~2.3GB | Best     | Slower  | Maximum accuracy  |

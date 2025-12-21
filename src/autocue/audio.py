@@ -4,14 +4,15 @@ Captures audio in small chunks and feeds them to the transcriber.
 """
 
 import queue
-import sounddevice as sd
-import numpy as np
 from typing import Optional
+
+import numpy as np
+import sounddevice as sd
 
 
 class AudioCapture:
     """Captures audio from the microphone in small chunks for streaming transcription."""
-    
+
     def __init__(
         self,
         sample_rate: int = 16000,
@@ -30,23 +31,23 @@ class AudioCapture:
         self.chunk_duration_ms = chunk_duration_ms
         self.chunk_size = int(sample_rate * chunk_duration_ms / 1000)
         self.device = device
-        
+
         self.audio_queue: queue.Queue[bytes] = queue.Queue()
         self.stream: Optional[sd.RawInputStream] = None
         self.running = False
-        
-    def _audio_callback(self, indata, frames, time, status):
+
+    def _audio_callback(self, indata, frames, time, status):  # pylint: disable=unused-argument
         """Called for each audio chunk from the microphone."""
         if status:
             print(f"Audio status: {status}")
         # Convert to bytes for Vosk
         self.audio_queue.put(bytes(indata))
-    
+
     def start(self):
         """Start capturing audio from the microphone."""
         if self.running:
             return
-            
+
         self.running = True
         self.stream = sd.RawInputStream(
             samplerate=self.sample_rate,
@@ -57,7 +58,7 @@ class AudioCapture:
             callback=self._audio_callback
         )
         self.stream.start()
-        
+
     def stop(self):
         """Stop capturing audio."""
         self.running = False
@@ -65,7 +66,7 @@ class AudioCapture:
             self.stream.stop()
             self.stream.close()
             self.stream = None
-            
+
     def get_chunk(self, timeout: float = 0.5) -> Optional[bytes]:
         """
         Get the next audio chunk.
@@ -80,7 +81,7 @@ class AudioCapture:
             return self.audio_queue.get(timeout=timeout)
         except queue.Empty:
             return None
-            
+
     def clear_queue(self):
         """Clear any pending audio chunks."""
         while not self.audio_queue.empty():
@@ -95,7 +96,9 @@ def list_devices():
     print("Available audio input devices:")
     devices = sd.query_devices()
     for i, device in enumerate(devices):
-        dev = dict(device)  # type: ignore[arg-type]
-        if dev['max_input_channels'] > 0:
-            print(f"  [{i}] {dev['name']} (inputs: {dev['max_input_channels']})")
+        # Convert device info to dict for easier access
+        dev: dict = dict(device)  # type: ignore[arg-type, assignment]
+        if dev.get('max_input_channels', 0) > 0:
+            print(f"  [{i}] {dev.get('name', 'Unknown')} "
+                  f"(inputs: {dev.get('max_input_channels', 0)})")
     return devices

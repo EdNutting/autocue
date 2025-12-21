@@ -3,25 +3,29 @@ Main autocue application.
 Orchestrates audio capture, transcription, script tracking, and the web UI.
 """
 
-import asyncio
 import argparse
+import asyncio
 import logging
 import signal
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from . import debug_log
+from .audio import AudioCapture, list_devices
+from .config import (
+    get_config_path,
+    get_display_settings,
+    get_tracking_settings,
+    load_config,
+    save_config,
+)
+from .server import WebServer
+from .tracker import ScriptTracker
+from .transcribe import Transcriber, download_model
+
 logger = logging.getLogger(__name__)
 
-from .audio import AudioCapture, list_devices
-from .transcribe import Transcriber, download_model
-from .tracker import ScriptTracker
-from .server import WebServer
-from .config import (
-    load_config, save_config, get_config_path,
-    get_display_settings, get_tracking_settings
-)
-from . import debug_log
 
 # Transcript files location (in project root)
 TRANSCRIPT_DIR = Path(__file__).parent.parent.parent / "transcripts"
@@ -37,7 +41,7 @@ class AutocueApp:
         model_path: Optional[str] = None,
         model_name: str = "small",
         host: str = "127.0.0.1",
-        port: int = 8765,
+        port: int = 8000,
         audio_device: Optional[int] = None,
         chunk_ms: int = 100,
         display_settings: Optional[dict] = None,
@@ -89,7 +93,8 @@ class AutocueApp:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.transcript_file = TRANSCRIPT_DIR / f"transcript_{timestamp}.txt"
         with open(self.transcript_file, 'w') as f:
-            f.write(f"=== Transcript started at {datetime.now().isoformat()} ===\n\n")
+            f.write(
+                f"=== Transcript started at {datetime.now().isoformat()} ===\n\n")
         print(f"Transcript recording started: {self.transcript_file}")
         await self.server.send_transcript_status(True, str(self.transcript_file))
 
@@ -103,7 +108,8 @@ class AutocueApp:
 
         if self.transcript_file:
             with open(self.transcript_file, 'a') as f:
-                f.write(f"\n=== Transcript ended at {datetime.now().isoformat()} ===\n")
+                f.write(
+                    f"\n=== Transcript ended at {datetime.now().isoformat()} ===\n")
             print(f"Transcript recording stopped: {self.transcript_file}")
 
         self.save_transcript = False
@@ -113,20 +119,20 @@ class AutocueApp:
     async def start(self):
         """Start the autocue application."""
         print("Starting Autocue...")
-        
+
         # Initialize components
         print("Initializing audio capture...")
         self.audio = AudioCapture(
             chunk_duration_ms=self.chunk_ms,
             device=self.audio_device
         )
-        
+
         print("Loading speech recognition model...")
         self.transcriber = Transcriber(
             model_path=self.model_path,
             model_name=self.model_name
         )
-        
+
         print("Starting web server...")
         self.server = WebServer(
             host=self.host,
@@ -138,21 +144,21 @@ class AutocueApp:
         print(f"\n✓ Autocue ready!")
         print(f"  Open http://{self.host}:{self.port} in your browser")
         print(f"  Press Ctrl+C to stop\n")
-        
+
         # Start audio processing
         self.running = True
         self.audio.start()
-        
+
         # Main processing loop
         await self._process_loop()
-        
+
     async def _process_loop(self):
         """Main loop that processes audio and updates position."""
         assert self.server is not None, "Server must be initialized"
         assert self.audio is not None, "Audio must be initialized"
         assert self.transcriber is not None, "Transcriber must be initialized"
         current_script = ""
-        
+
         while self.running:
             # Check if script has changed
             if self.server.script_text and self.server.script_text != current_script:
@@ -160,9 +166,12 @@ class AutocueApp:
                 self.tracker = ScriptTracker(
                     current_script,
                     window_size=self.tracking_settings.get("window_size", 8),
-                    match_threshold=self.tracking_settings.get("match_threshold", 65.0),
-                    backtrack_threshold=self.tracking_settings.get("backtrack_threshold", 3),
-                    max_jump_distance=self.tracking_settings.get("max_jump_distance", 50)
+                    match_threshold=self.tracking_settings.get(
+                        "match_threshold", 65.0),
+                    backtrack_threshold=self.tracking_settings.get(
+                        "backtrack_threshold", 3),
+                    max_jump_distance=self.tracking_settings.get(
+                        "max_jump_distance", 50)
                 )
                 print(f"Script loaded: {len(self.tracker.words)} words")
                 # Clear debug logs for new session
@@ -176,7 +185,7 @@ class AutocueApp:
                     self.server._start_transcript_on_script = False  # Reset flag
                     if not self.transcript_file:  # Don't restart if already recording
                         await self._start_transcript()
-                
+
             # Check for reset request
             if self.server._reset_requested:
                 self.server._reset_requested = False
@@ -235,7 +244,8 @@ class AutocueApp:
                             "[VALIDATION] Triggering validation at position %d",
                             position.word_index
                         )
-                        validated_pos, is_backtrack = self.tracker.validate_position(result.text)
+                        validated_pos, is_backtrack = self.tracker.validate_position(
+                            result.text)
                         if is_backtrack or validated_pos != position.word_index:
                             # Position was corrected by validation
                             logger.info(
@@ -267,7 +277,8 @@ class AutocueApp:
 
                     if position_changed or is_backtrack:
                         # Log what we're sending to the client
-                        word_at_pos = self.tracker.words[position.word_index] if position.word_index < len(self.tracker.words) else "END"
+                        word_at_pos = self.tracker.words[position.word_index] if position.word_index < len(
+                            self.tracker.words) else "END"
                         debug_log.log_server_word(
                             position.word_index, word_at_pos,
                             f"SEND line={position.line_index} offset={word_offset}"
@@ -287,21 +298,21 @@ class AutocueApp:
                         self._last_sent_word_index = position.word_index
                         self._last_sent_line_index = position.line_index
                         self._last_sent_word_offset = word_offset
-                    
+
             # Small sleep to prevent CPU spinning
             await asyncio.sleep(0.01)
-            
+
     async def stop(self):
         """Stop the autocue application."""
         print("\nStopping Autocue...")
         self.running = False
-        
+
         if self.audio:
             self.audio.stop()
-            
+
         if self.server:
             await self.server.stop()
-            
+
         print("Autocue stopped.")
 
 
@@ -345,8 +356,8 @@ def main():
     parser.add_argument(
         "--port", "-p",
         type=int,
-        default=config.get("port", 8765),
-        help="Web server port (default: from config or 8765)"
+        default=config.get("port", 8000),
+        help="Web server port (default: from config or 8000)"
     )
 
     parser.add_argument(
@@ -394,7 +405,7 @@ def main():
     )
 
     args = parser.parse_args()
-    
+
     # Handle special commands
     if args.list_devices:
         list_devices()
@@ -433,7 +444,7 @@ def main():
         tracking_settings=get_tracking_settings(config),
         save_transcript=args.save_transcript
     )
-    
+
     # Handle shutdown gracefully
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -467,7 +478,8 @@ def main():
             task.cancel()
         # Allow cancelled tasks to complete
         if pending:
-            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.run_until_complete(asyncio.gather(
+                *pending, return_exceptions=True))
         loop.close()
 
 

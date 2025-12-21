@@ -9,7 +9,8 @@ Tracks which expansions are still valid as words are matched, and
 determines when an expansion is complete.
 """
 
-from typing import List, Optional
+from typing import List
+
 from rapidfuzz import fuzz
 
 from .script_parser import ParsedScript, normalize_word

@@ -8,7 +8,6 @@ Creates two log files:
 Logging is disabled by default. Call enable() to turn it on.
 """
 
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -18,24 +17,24 @@ SERVER_LOG = LOG_DIR / "server_words.log"
 FRONTEND_LOG = LOG_DIR / "frontend_words.log"
 
 # Global flag to control whether debug logging is enabled
-_enabled = False
+_ENABLED = False  # pylint: disable=invalid-name
 
 
 def enable():
     """Enable debug logging."""
-    global _enabled
-    _enabled = True
+    global _ENABLED  # pylint: disable=global-statement
+    _ENABLED = True
 
 
 def disable():
     """Disable debug logging."""
-    global _enabled
-    _enabled = False
+    global _ENABLED  # pylint: disable=global-statement
+    _ENABLED = False
 
 
 def is_enabled() -> bool:
     """Check if debug logging is enabled."""
-    return _enabled
+    return _ENABLED
 
 
 def _ensure_log_dir():
@@ -50,11 +49,11 @@ def _timestamp():
 
 def clear_logs():
     """Clear both log files for a fresh session."""
-    if not _enabled:
+    if not _ENABLED:
         return
     _ensure_log_dir()
     for log_file in [SERVER_LOG, FRONTEND_LOG]:
-        with open(log_file, 'w') as f:
+        with open(log_file, 'w', encoding='utf-8') as f:
             f.write(f"=== New session started at {datetime.now().isoformat()} ===\n\n")
 
 
@@ -67,10 +66,10 @@ def log_server_word(word_index: int, word: str, event: str = "match"):
         word: The actual word at that position
         event: Type of event (match, skip, backtrack, forward_jump, validation)
     """
-    if not _enabled:
+    if not _ENABLED:
         return
     _ensure_log_dir()
-    with open(SERVER_LOG, 'a') as f:
+    with open(SERVER_LOG, 'a', encoding='utf-8') as f:
         f.write(f"[{_timestamp()}] {event:15} pos={word_index:4d} word=\"{word}\"\n")
 
 
@@ -89,24 +88,29 @@ def log_server_position_update(
         words_in_range: The words between old and new positions
         reason: Why the position changed
     """
-    if not _enabled:
+    if not _ENABLED:
         return
     _ensure_log_dir()
-    with open(SERVER_LOG, 'a') as f:
+    with open(SERVER_LOG, 'a', encoding='utf-8') as f:
         f.write(f"[{_timestamp()}] POSITION CHANGE: {old_pos} -> {new_pos} ({reason})\n")
         f.write(f"                 words: {words_in_range}\n")
 
 
 def log_server_transcript(transcript: str, new_words: list):
     """Log the transcript and extracted new words."""
-    if not _enabled:
+    if not _ENABLED:
         return
     _ensure_log_dir()
-    with open(SERVER_LOG, 'a') as f:
+    with open(SERVER_LOG, 'a', encoding='utf-8') as f:
         f.write(f"[{_timestamp()}] transcript: \"{transcript[-60:]}\" new_words={new_words}\n")
 
 
-def log_frontend_word(word_index: int, word: str, source_line: int = -1, source_offset: int = -1):
+def log_frontend_word(
+    word_index: int,
+    word: str,
+    source_line: int = -1,
+    source_offset: int = -1
+):
     """
     Log a word highlight on the frontend side.
 
@@ -116,17 +120,23 @@ def log_frontend_word(word_index: int, word: str, source_line: int = -1, source_
         source_line: The lineIndex received from server
         source_offset: The wordOffset received from server
     """
-    if not _enabled:
+    if not _ENABLED:
         return
     _ensure_log_dir()
-    with open(FRONTEND_LOG, 'a') as f:
-        f.write(f"[{_timestamp()}] highlight pos={word_index:4d} word=\"{word}\" (from line={source_line}, offset={source_offset})\n")
+    with open(FRONTEND_LOG, 'a', encoding='utf-8') as f:
+        f.write(
+            f"[{_timestamp()}] highlight pos={word_index:4d} word=\"{word}\" "
+            f"(from line={source_line}, offset={source_offset})\n"
+        )
 
 
 def log_frontend_server_data(word_index: int, line_index: int, word_offset: int):
     """Log the raw data received from server."""
-    if not _enabled:
+    if not _ENABLED:
         return
     _ensure_log_dir()
-    with open(FRONTEND_LOG, 'a') as f:
-        f.write(f"[{_timestamp()}] received: wordIndex={word_index}, lineIndex={line_index}, wordOffset={word_offset}\n")
+    with open(FRONTEND_LOG, 'a', encoding='utf-8') as f:
+        f.write(
+            f"[{_timestamp()}] received: wordIndex={word_index}, "
+            f"lineIndex={line_index}, wordOffset={word_offset}\n"
+        )

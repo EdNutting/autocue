@@ -11,7 +11,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, TextIO
+from typing import List, TextIO
 
 from .tracker import ScriptTracker
 
@@ -34,7 +34,7 @@ def load_transcript(path: Path) -> List[str]:
     Returns list of transcript text lines.
     """
     lines = []
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
             # Skip metadata lines and empty lines
@@ -46,7 +46,7 @@ def load_transcript(path: Path) -> List[str]:
 
 def load_script(path: Path) -> str:
     """Load script file content."""
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         return f.read()
 
 
@@ -88,15 +88,16 @@ def replay_transcript(
     output.write("TRACKING LOG:\n")
     output.write("-" * 40 + "\n")
 
-    prev_position = 0
     cumulative_transcript = ""
 
     for line_num, line in enumerate(transcript_lines, start=1):
         # Simulate cumulative transcript (as Vosk does - each final result
         # is a complete utterance, but we simulate word-by-word buildup)
-        words = line.split()
 
-        output.write(f"\n--- Line {line_num}: \"{line[:60]}{'...' if len(line) > 60 else ''}\" ---\n")
+        line_display = f"--- Line {line_num}: \"{line[:60]}"
+        line_display += '...' if len(line) > 60 else ''
+        line_display += "\" ---"
+        output.write(f"\n{line_display}\n")
 
         # Process the full line as a final result (is_partial=False)
         # This simulates how Vosk delivers final results
@@ -124,7 +125,11 @@ def replay_transcript(
             event_type = "regress"
 
         # Get script word at current position
-        script_word = tracker.words[position_after] if position_after < len(tracker.words) else "<END>"
+        script_word = (
+            tracker.words[position_after]
+            if position_after < len(tracker.words)
+            else "<END>"
+        )
 
         # Log the tracking result
         details = (
@@ -134,15 +139,29 @@ def replay_transcript(
 
         if event_type in ("BACKTRACK", "FORWARD_JUMP") or verbose:
             if event_type == "BACKTRACK":
-                output.write(f"  *** BACKTRACK DETECTED ***\n")
-                output.write(f"      Position: {position_before} -> {position_after}\n")
-                output.write(f"      High water mark: {high_water_before} -> {tracker.high_water_mark}\n")
-                output.write(f"      Script word at new position: \"{script_word}\"\n")
+                output.write("  *** BACKTRACK DETECTED ***\n")
+                output.write(
+                    f"      Position: {position_before} -> {position_after}\n"
+                )
+                output.write(
+                    f"      High water mark: {high_water_before} -> "
+                    f"{tracker.high_water_mark}\n"
+                )
+                output.write(
+                    f"      Script word at new position: \"{script_word}\"\n"
+                )
             elif event_type == "FORWARD_JUMP":
-                output.write(f"  *** FORWARD JUMP DETECTED ***\n")
-                output.write(f"      Position: {position_before} -> {position_after}\n")
-                output.write(f"      High water mark: {high_water_before} -> {tracker.high_water_mark}\n")
-                output.write(f"      Script word at new position: \"{script_word}\"\n")
+                output.write("  *** FORWARD JUMP DETECTED ***\n")
+                output.write(
+                    f"      Position: {position_before} -> {position_after}\n"
+                )
+                output.write(
+                    f"      High water mark: {high_water_before} -> "
+                    f"{tracker.high_water_mark}\n"
+                )
+                output.write(
+                    f"      Script word at new position: \"{script_word}\"\n"
+                )
             else:
                 output.write(f"  [{position_after:4d}] \"{script_word}\" ({event_type})\n")
 
@@ -166,8 +185,6 @@ def replay_transcript(
                     output.write(" (BACKTRACK)")
                 output.write("\n")
 
-        prev_position = position_after
-
     # Write summary
     output.write("\n" + "=" * 80 + "\n")
     output.write("SUMMARY:\n")
@@ -187,12 +204,18 @@ def replay_transcript(
     if backtracks:
         output.write("\nBacktrack events:\n")
         for e in backtracks:
-            output.write(f"  Line {e.transcript_line}: -> position {e.script_index} \"{e.script_word}\"\n")
+            output.write(
+                f"  Line {e.transcript_line}: -> position {e.script_index} "
+                f"\"{e.script_word}\"\n"
+            )
 
     if forward_jumps:
         output.write("\nForward jump events:\n")
         for e in forward_jumps:
-            output.write(f"  Line {e.transcript_line}: -> position {e.script_index} \"{e.script_word}\"\n")
+            output.write(
+                f"  Line {e.transcript_line}: -> position {e.script_index} "
+                f"\"{e.script_word}\"\n"
+            )
 
     return events
 
@@ -238,7 +261,6 @@ def replay_transcript_word_by_word(
     output.write("TRACKING LOG:\n")
     output.write("-" * 40 + "\n")
 
-    prev_position = 0
     word_count = 0
 
     for line_num, line in enumerate(transcript_lines, start=1):
@@ -261,7 +283,7 @@ def replay_transcript_word_by_word(
             high_water_before = tracker.high_water_mark
 
             # Update with partial result
-            is_final = (word_idx == len(words) - 1)
+            is_final = word_idx == len(words) - 1
             result = tracker.update(partial_transcript, is_partial=not is_final)
 
             position_after = result.speakable_index
@@ -282,18 +304,27 @@ def replay_transcript_word_by_word(
                 event_type = "regress"
 
             # Get script words for logging
-            # For advances: show position_after (where we are now) and the word there
-            # For no_advance: show position_before (where we're stuck) and the word there
+            # For advances: show position_after and the word there
+            # For no_advance: show position_before and the word there
             if event_type == "advance":
                 # Show the new position we advanced TO
                 display_pos = position_after
-                script_word = tracker.words[display_pos] if display_pos < len(tracker.words) else "<END>"
+                script_word = (
+                    tracker.words[display_pos]
+                    if display_pos < len(tracker.words) else "<END>"
+                )
                 # Also get the word we advanced FROM for context
-                prev_script_word = tracker.words[position_before] if position_before < len(tracker.words) else "<END>"
+                prev_script_word = (
+                    tracker.words[position_before]
+                    if position_before < len(tracker.words) else "<END>"
+                )
             else:
                 # Show current position (where we're stuck)
                 display_pos = position_before
-                script_word = tracker.words[display_pos] if display_pos < len(tracker.words) else "<END>"
+                script_word = (
+                    tracker.words[display_pos]
+                    if display_pos < len(tracker.words) else "<END>"
+                )
                 prev_script_word = None
 
             # Log the tracking result
@@ -303,7 +334,8 @@ def replay_transcript_word_by_word(
                 if event_type == "BACKTRACK":
                     output.write(f"  *** BACKTRACK at \"{word}\" ***\n")
                     output.write(
-                        f"      Position: {position_before} -> {position_after}\n"
+                        f"      Position: {position_before} -> "
+                        f"{position_after}\n"
                     )
                     output.write(
                         f"      High water mark: "
@@ -314,12 +346,14 @@ def replay_transcript_word_by_word(
                         if position_after < len(tracker.words) else "<END>"
                     )
                     output.write(
-                        f"      Script word at new position: \"{script_word_after}\"\n"
+                        f"      Script word at new position: "
+                        f"\"{script_word_after}\"\n"
                     )
                 elif event_type == "FORWARD_JUMP":
                     output.write(f"  *** FORWARD JUMP at \"{word}\" ***\n")
                     output.write(
-                        f"      Position: {position_before} -> {position_after}\n"
+                        f"      Position: {position_before} -> "
+                        f"{position_after}\n"
                     )
                     output.write(
                         f"      High water mark: "
@@ -330,7 +364,8 @@ def replay_transcript_word_by_word(
                         if position_after < len(tracker.words) else "<END>"
                     )
                     output.write(
-                        f"      Script word at new position: \"{script_word_after}\"\n"
+                        f"      Script word at new position: "
+                        f"\"{script_word_after}\"\n"
                     )
                 elif event_type == "advance":
                     # Show: position advanced, transcript word, what we passed
@@ -341,8 +376,8 @@ def replay_transcript_word_by_word(
                 else:
                     # no_advance or regress - show where we're stuck
                     output.write(
-                        f"    [{display_pos:4d}] \"{word}\" -> \"{script_word}\" "
-                        f"({event_type})\n"
+                        f"    [{display_pos:4d}] \"{word}\" -> "
+                        f"\"{script_word}\" ({event_type})\n"
                     )
 
             # Record event
@@ -358,14 +393,17 @@ def replay_transcript_word_by_word(
 
             # Trigger validation if needed
             if tracker.needs_validation:
-                validated_pos, was_backtrack = tracker.validate_position(partial_transcript)
+                validated_pos, was_backtrack = (
+                    tracker.validate_position(partial_transcript)
+                )
                 if was_backtrack or validated_pos != position_after:
-                    output.write(f"      [VALIDATION] corrected: {position_after} -> {validated_pos}")
+                    output.write(
+                        f"      [VALIDATION] corrected: {position_after} -> "
+                        f"{validated_pos}"
+                    )
                     if was_backtrack:
                         output.write(" (BACKTRACK)")
                     output.write("\n")
-
-            prev_position = position_after
 
     # Write summary
     output.write("\n" + "=" * 80 + "\n")
@@ -388,12 +426,18 @@ def replay_transcript_word_by_word(
     if backtracks:
         output.write("\nBacktrack events:\n")
         for e in backtracks:
-            output.write(f"  \"{e.transcript_word}\" -> position {e.script_index} \"{e.script_word}\"\n")
+            output.write(
+                f"  \"{e.transcript_word}\" -> position {e.script_index} "
+                f"\"{e.script_word}\"\n"
+            )
 
     if forward_jumps:
         output.write("\nForward jump events:\n")
         for e in forward_jumps:
-            output.write(f"  \"{e.transcript_word}\" -> position {e.script_index} \"{e.script_word}\"\n")
+            output.write(
+                f"  \"{e.transcript_word}\" -> position {e.script_index} "
+                f"\"{e.script_word}\"\n"
+            )
 
     return events
 
@@ -460,17 +504,25 @@ def main():
 
     # Run replay
     if args.output:
-        with open(args.output, 'w') as f:
+        with open(args.output, 'w', encoding='utf-8') as f:
             if args.word_by_word:
-                replay_transcript_word_by_word(transcript_lines, script_text, f, args.verbose)
+                replay_transcript_word_by_word(
+                    transcript_lines, script_text, f, args.verbose
+                )
             else:
-                replay_transcript(transcript_lines, script_text, f, args.verbose)
+                replay_transcript(
+                    transcript_lines, script_text, f, args.verbose
+                )
         print(f"Debug log written to: {args.output}")
     else:
         if args.word_by_word:
-            replay_transcript_word_by_word(transcript_lines, script_text, sys.stdout, args.verbose)
+            replay_transcript_word_by_word(
+                transcript_lines, script_text, sys.stdout, args.verbose
+            )
         else:
-            replay_transcript(transcript_lines, script_text, sys.stdout, args.verbose)
+            replay_transcript(
+                transcript_lines, script_text, sys.stdout, args.verbose
+            )
 
 
 if __name__ == "__main__":

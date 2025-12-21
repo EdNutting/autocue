@@ -4,7 +4,7 @@ Handles loading and saving settings from a YAML config file.
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import yaml
 
@@ -17,7 +17,7 @@ DEFAULT_CONFIG = {
     "model": "small",
     "model_path": None,
     "host": "127.0.0.1",
-    "port": 8765,
+    "port": 8000,
     "audio_device": None,
     "chunk_ms": 100,
 
@@ -40,7 +40,8 @@ DEFAULT_CONFIG = {
         "window_size": 8,
         "match_threshold": 65.0,
         "backtrack_threshold": 3,
-        "max_jump_distance": 50,  # Max words to jump (prevents jumping to similar text far away)
+        # Max words to jump (prevents jumping to similar text far away)
+        "max_jump_distance": 50,
     },
 }
 
@@ -83,7 +84,7 @@ def load_config(config_path: Optional[Path] = None) -> dict:
     # Load from file if it exists
     if config_path.exists():
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, 'r', encoding='utf-8') as f:
                 file_config = yaml.safe_load(f)
                 if file_config:
                     config = _deep_merge(config, file_config)
@@ -108,7 +109,7 @@ def save_config(config: dict, config_path: Optional[Path] = None) -> bool:
         config_path = get_config_path()
 
     try:
-        with open(config_path, 'w') as f:
+        with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
         return True
     except (OSError, yaml.YAMLError) as e:

@@ -174,7 +174,7 @@ class WebServer:
     def __init__(
         self,
         host: str = "127.0.0.1",
-        port: int = 8765,
+        port: int = 8000,
         initial_settings: Optional[dict] = None,
         samples_dir: Optional[str] = None
     ):
