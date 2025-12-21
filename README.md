@@ -19,8 +19,7 @@ scrutiny.
 
 ## Platforms
 
-I've written this for use on my Macbook Air M3. If it works on any other
-platforms, that's a happy coincidence.
+Primarily developed and tested on macOS (M3), but should work on Windows and Linux with appropriate audio dependencies installed.
 
 ## Features
 
@@ -41,8 +40,26 @@ platforms, that's a happy coincidence.
 
 ### 1. Install PortAudio (required for microphone access)
 
+**macOS:**
 ```bash
 brew install portaudio
+```
+
+**Windows:**
+
+Option A - Using pip (recommended):
+```bash
+pip install pyaudio
+```
+
+Option B - Using conda/anaconda:
+```bash
+conda install portaudio
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt-get install portaudio19-dev
 ```
 
 ### 2. Install Autocue
