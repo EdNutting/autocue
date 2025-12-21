@@ -6,8 +6,7 @@ Captures audio in small chunks and feeds them to the transcriber.
 import queue
 import sounddevice as sd
 import numpy as np
-from typing import Callable, Optional
-import threading
+from typing import Optional
 
 
 class AudioCapture:
@@ -96,6 +95,7 @@ def list_devices():
     print("Available audio input devices:")
     devices = sd.query_devices()
     for i, device in enumerate(devices):
-        if device['max_input_channels'] > 0:
-            print(f"  [{i}] {device['name']} (inputs: {device['max_input_channels']})")
+        dev = dict(device)  # type: ignore[arg-type]
+        if dev['max_input_channels'] > 0:
+            print(f"  [{i}] {dev['name']} (inputs: {dev['max_input_channels']})")
     return devices

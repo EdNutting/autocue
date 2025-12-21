@@ -6,7 +6,7 @@ Provides partial results as speech is happening, not just final results.
 import json
 import os
 from pathlib import Path
-from typing import Callable, Optional, Tuple
+from typing import Optional, Tuple
 from vosk import Model, KaldiRecognizer, SetLogLevel
 
 
@@ -119,13 +119,16 @@ class Transcriber:
         return None
 
 
-def download_model(model_name: str = "small", target_dir: Optional[str] = None):
+def download_model(model_name: str = "small", target_dir: Optional[str] = None) -> str:
     """
     Download a Vosk model.
 
     Args:
         model_name: One of "small", "medium", "large"
         target_dir: Directory to save the model, or None for default
+
+    Returns:
+        Path to the downloaded model as a string.
     """
     import urllib.request
     import zipfile
@@ -137,12 +140,12 @@ def download_model(model_name: str = "small", target_dir: Optional[str] = None):
             f"Unknown model: {model_name}. Choose from: {list(Transcriber.MODELS.keys())}")
 
     if target_dir is None:
-        target_dir = Path.home() / ".cache" / "autocue" / "models"
+        target_path = Path.home() / ".cache" / "autocue" / "models"
     else:
-        target_dir = Path(target_dir)
+        target_path = Path(target_dir)
 
-    target_dir.mkdir(parents=True, exist_ok=True)
-    model_path = target_dir / model_dir_name
+    target_path.mkdir(parents=True, exist_ok=True)
+    model_path = target_path / model_dir_name
 
     if model_path.exists():
         print(f"Model already exists at {model_path}")
@@ -157,7 +160,7 @@ def download_model(model_name: str = "small", target_dir: Optional[str] = None):
 
         print("Extracting model...")
         with zipfile.ZipFile(tmp.name, 'r') as zf:
-            zf.extractall(target_dir)
+            zf.extractall(target_path)
 
         print("Done. Removing temporary file...")
         os.unlink(tmp.name)

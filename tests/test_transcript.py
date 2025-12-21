@@ -107,6 +107,7 @@ class TestDynamicTranscriptControl:
                 assert app.transcript_file is None
 
                 # File should have end marker
+                assert transcript_file is not None, "File should have been created"
                 content = transcript_file.read_text()
                 assert "Transcript ended" in content
 
@@ -150,6 +151,8 @@ class TestDynamicTranscriptControl:
                 await app._stop_transcript()
 
                 # Files should be different (different timestamps)
+                assert first_file is not None, "First file should have been created"
+                assert second_file is not None, "Second file should have been created"
                 assert first_file != second_file
                 assert first_file.exists()
                 assert second_file.exists()

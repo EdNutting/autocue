@@ -364,6 +364,7 @@ class TestGetNumberExpansions:
         """Primary (most common) expansion should be first."""
         result = get_number_expansions("100")
         # First expansion should be the cardinal form
+        assert result is not None, "100 should have expansions"
         assert result[0] == ["one", "hundred"]
 
     def test_ordinal_detection(self):

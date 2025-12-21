@@ -6,14 +6,12 @@ Serves the HTML UI and handles WebSocket connections for real-time updates.
 import asyncio
 import json
 import logging
-import os
 import re
 import markdown
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional, Set, List, Tuple, Dict
 from aiohttp import web
-import weakref
 
 from .config import load_config, save_config, update_config_display
 from . import debug_log
@@ -59,16 +57,19 @@ class WordIndexingHTMLParser(HTMLParser):
         return self.current_raw_token.text.lower() == text.lower()
 
     def handle_starttag(self, tag, attrs):
+        """Handle opening HTML tags."""
         attrs_str = ''.join(f' {k}="{v}"' for k, v in attrs)
         self.output.append(f'<{tag}{attrs_str}>')
         self.tag_stack.append(tag)
 
     def handle_endtag(self, tag):
+        """Handle closing HTML tags."""
         self.output.append(f'</{tag}>')
         if self.tag_stack and self.tag_stack[-1] == tag:
             self.tag_stack.pop()
 
     def handle_startendtag(self, tag, attrs):
+        """Handle self-closing HTML tags."""
         attrs_str = ''.join(f' {k}="{v}"' for k, v in attrs)
         self.output.append(f'<{tag}{attrs_str}/>')
 
@@ -94,7 +95,7 @@ class WordIndexingHTMLParser(HTMLParser):
                 escaped = part.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
                 # Check if this matches the current raw token
-                if self._token_matches(part):
+                if self._token_matches(part) and self.current_raw_token is not None:
                     # Wrap with span using the raw token index
                     idx = self.current_raw_token.index
                     result.append(f'<span class="word" data-word-index="{idx}">{escaped}</span>')
@@ -106,12 +107,15 @@ class WordIndexingHTMLParser(HTMLParser):
         self.output.append(''.join(result))
 
     def handle_entityref(self, name):
+        """Handle HTML entity references like &amp;."""
         self.output.append(f'&{name};')
 
     def handle_charref(self, name):
+        """Handle HTML character references like &#39;."""
         self.output.append(f'&#{name};')
 
     def get_output(self) -> str:
+        """Return the processed HTML output."""
         return ''.join(self.output)
 
 
@@ -447,11 +451,12 @@ class WebServer:
             devices = sd.query_devices()
             device_list = []
             for i, device in enumerate(devices):
-                if device['max_input_channels'] > 0:
+                dev: dict = dict(device)  # type: ignore[arg-type]
+                if dev['max_input_channels'] > 0:
                     device_list.append({
                         "index": i,
-                        "name": device['name'],
-                        "channels": device['max_input_channels']
+                        "name": dev['name'],
+                        "channels": dev['max_input_channels']
                     })
             return web.json_response({
                 "status": "ok",
@@ -472,7 +477,7 @@ class WebServer:
         for ws in self.websockets:
             try:
                 await ws.send_json(message)
-            except Exception as e:
+            except (ConnectionError, ConnectionResetError, RuntimeError) as e:
                 print(f"Error sending to WebSocket: {e}")
                 dead.add(ws)
                 

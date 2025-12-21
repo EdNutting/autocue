@@ -417,10 +417,9 @@ class ScriptTracker:
             if self.active_expansions:
                 # Try to continue the current expansion
                 if self._filter_expansions_by_word(spoken_word):
-                    debug_log.log_server_word(
-                        pos, self.words[pos],
-                        f"exp_match \"{spoken_norm}\" pos={self.expansion_match_position} remaining={len(self.active_expansions)}"
-                    )
+                    msg = (f"exp_match \"{spoken_norm}\" pos={self.expansion_match_position} "
+                           f"remaining={len(self.active_expansions)}")
+                    debug_log.log_server_word(pos, self.words[pos], msg)
                     matched = True
                     last_matched_spoken = spoken_word
                     consecutive_misses = 0
@@ -436,11 +435,10 @@ class ScriptTracker:
                             self.skip_disabled_count -= 1
                 else:
                     # Word doesn't match any remaining expansion
-                    # The expansion ended early - advance position and try this word at next position
-                    debug_log.log_server_word(
-                        pos, self.words[pos],
-                        f"exp_ended \"{spoken_norm}\" (no match at pos {self.expansion_match_position})"
-                    )
+                    # Expansion ended early - advance position and try this word at next pos
+                    msg = (f"exp_ended \"{spoken_norm}\" "
+                           f"(no match at pos {self.expansion_match_position})")
+                    debug_log.log_server_word(pos, self.words[pos], msg)
                     pos += 1
                     positions_advanced += 1
                     self._clear_expansion_state()
@@ -450,7 +448,8 @@ class ScriptTracker:
                     continue
             else:
                 # Not in an expansion - try to start one or match normally
-                sw = self.parsed_script.speakable_words[pos] if pos < len(self.parsed_script.speakable_words) else None
+                speakable_words = self.parsed_script.speakable_words
+                sw = speakable_words[pos] if pos < len(speakable_words) else None
 
                 if sw and sw.is_expansion and sw.all_expansions:
                     # This is an expandable token - start expansion matching
@@ -501,9 +500,8 @@ class ScriptTracker:
                                 debug_log.log_server_word(
                                     pos + i, self.words[pos + i], f"skip{skip_count}_missed"
                                 )
-                            debug_log.log_server_word(
-                                skip_pos, self.words[skip_pos], f"skip{skip_count}_match \"{spoken_norm}\""
-                            )
+                            msg = f"skip{skip_count}_match \"{spoken_norm}\""
+                            debug_log.log_server_word(skip_pos, self.words[skip_pos], msg)
                             # Check if the skipped-to position starts an expansion
                             sw_skip = self.parsed_script.speakable_words[skip_pos] \
                                 if skip_pos < len(self.parsed_script.speakable_words) else None

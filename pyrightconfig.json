@@ -1,0 +1,12 @@
+{
+  "include": ["src", "tests"],
+  "exclude": ["**/__pycache__"],
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "standard",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "reportOptionalMemberAccess": true,
+  "reportOptionalSubscript": true,
+  "reportArgumentType": true,
+  "reportAssignmentType": true
+}

@@ -287,11 +287,13 @@ class TestMinorSpeechFaults:
             "welcome to autocue hello um and welcome to this this demonstration",
         ]
 
+        pos = None
         for speech in speech_segments:
             pos = tracker.update(speech)
 
         # Should be around word 9 (after "demonstration")
         expected = 9
+        assert pos is not None, "Loop should have executed at least once"
         assert abs(pos.word_index - expected) <= 4, \
             f"Position {pos.word_index} too far from expected ~{expected}"
 

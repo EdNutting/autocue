@@ -3,7 +3,6 @@ Configuration management for Autocue.
 Handles loading and saving settings from a YAML config file.
 """
 
-import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -88,7 +87,7 @@ def load_config(config_path: Optional[Path] = None) -> dict:
                 file_config = yaml.safe_load(f)
                 if file_config:
                     config = _deep_merge(config, file_config)
-        except Exception as e:
+        except (OSError, yaml.YAMLError) as e:
             print(f"Warning: Could not load config from {config_path}: {e}")
 
     return config
@@ -112,7 +111,7 @@ def save_config(config: dict, config_path: Optional[Path] = None) -> bool:
         with open(config_path, 'w') as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
         return True
-    except Exception as e:
+    except (OSError, yaml.YAMLError) as e:
         print(f"Error saving config to {config_path}: {e}")
         return False
 

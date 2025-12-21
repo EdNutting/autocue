@@ -7,8 +7,6 @@ import asyncio
 import argparse
 import logging
 import signal
-import sys
-import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -60,10 +58,9 @@ class AutocueApp:
         self.transcriber: Optional[Transcriber] = None
         self.tracker: Optional[ScriptTracker] = None
         self.server: Optional[WebServer] = None
-        self.transcript_file: Optional[str] = None
+        self.transcript_file: Optional[Path] = None
 
         self.running = False
-        self.audio_thread: Optional[threading.Thread] = None
 
         # Track last sent position to avoid duplicate updates
         self._last_sent_word_index: Optional[int] = None
@@ -81,9 +78,10 @@ class AutocueApp:
 
     async def _start_transcript(self):
         """Start transcript recording."""
+        assert self.server is not None, "Server must be initialized"
         if self.save_transcript and self.transcript_file:
             # Already recording
-            await self.server.send_transcript_status(True, self.transcript_file)
+            await self.server.send_transcript_status(True, str(self.transcript_file))
             return
 
         self.save_transcript = True
@@ -93,10 +91,11 @@ class AutocueApp:
         with open(self.transcript_file, 'w') as f:
             f.write(f"=== Transcript started at {datetime.now().isoformat()} ===\n\n")
         print(f"Transcript recording started: {self.transcript_file}")
-        await self.server.send_transcript_status(True, self.transcript_file)
+        await self.server.send_transcript_status(True, str(self.transcript_file))
 
     async def _stop_transcript(self):
         """Stop transcript recording."""
+        assert self.server is not None, "Server must be initialized"
         if not self.save_transcript:
             # Already stopped
             await self.server.send_transcript_status(False)
@@ -149,6 +148,9 @@ class AutocueApp:
         
     async def _process_loop(self):
         """Main loop that processes audio and updates position."""
+        assert self.server is not None, "Server must be initialized"
+        assert self.audio is not None, "Audio must be initialized"
+        assert self.transcriber is not None, "Transcriber must be initialized"
         current_script = ""
         
         while self.running:
@@ -439,6 +441,7 @@ def main():
     shutdown_event = asyncio.Event()
 
     def shutdown(sig, frame):
+        """Handle shutdown signals (SIGINT, SIGTERM) gracefully."""
         print("\nReceived shutdown signal...")
         # Set the running flag to false to stop the main loop
         app.running = False

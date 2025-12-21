@@ -1,0 +1,38 @@
+# Ruff configuration for Autocue
+# https://docs.astral.sh/ruff/configuration/
+
+[lint]
+# Enable common rule sets
+select = [
+    "E",      # pycodestyle errors
+    "F",      # Pyflakes
+    "W",      # pycodestyle warnings
+    "I",      # isort (import sorting)
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+]
+
+ignore = [
+    "E501",   # Line too long - handled separately with line-length setting
+    "SIM108", # Use ternary operator - can reduce readability
+]
+
+[lint.per-file-ignores]
+"tests/*" = [
+    "B011",   # assert False is fine in tests
+]
+
+[format]
+# Use double quotes for strings
+quote-style = "double"
+
+# Indent with spaces
+indent-style = "space"
+
+# Target Python 3.10+
+target-version = "py310"
+
+# Line length
+line-length = 100

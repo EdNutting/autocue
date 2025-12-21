@@ -450,7 +450,7 @@ def main():
     try:
         transcript_lines = load_transcript(args.transcript)
         script_text = load_script(args.script)
-    except Exception as e:
+    except OSError as e:
         print(f"Error loading files: {e}", file=sys.stderr)
         sys.exit(1)
 

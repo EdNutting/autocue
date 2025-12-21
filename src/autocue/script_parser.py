@@ -36,7 +36,10 @@ PUNCTUATION_EXPANSIONS: Dict[str, List[List[str]]] = {
     "-": [["minus"], ["dash"], ["hyphen"]],
     "=": [["equals"], ["equal"], ["is"]],
     "%": [["percent"]],
-    "^": [["caret"], ["to", "the", "power"], ["to", "the", "power", "of"], ["xor"], ["ex", "or"], ["exor"], ["exo"], ["x", "or"]],
+    "^": [
+        ["caret"], ["to", "the", "power"], ["to", "the", "power", "of"],
+        ["xor"], ["ex", "or"], ["exor"], ["exo"], ["x", "or"]
+    ],
     "|": [["pipe"], ["or"]],
     "*": [["times"], ["multiply"], ["multiplied"]],
 }
@@ -75,7 +78,8 @@ class SpeakableWord:
 
     def __repr__(self) -> str:
         if self.is_expansion and self.all_expansions:
-            return f"SpeakableWord('{self.text}' -> raw[{self.raw_token_index}] expansions={len(self.all_expansions)})"
+            return (f"SpeakableWord('{self.text}' -> raw[{self.raw_token_index}] "
+                    f"expansions={len(self.all_expansions)})")
         return f"SpeakableWord('{self.text}' -> raw[{self.raw_token_index}])"
 
 
@@ -92,10 +96,12 @@ class ParsedScript:
 
     @property
     def total_raw_tokens(self) -> int:
+        """Return the total number of raw tokens in the script."""
         return len(self.raw_tokens)
 
     @property
     def total_speakable_words(self) -> int:
+        """Return the total number of speakable words in the script."""
         return len(self.speakable_words)
 
     def get_raw_token(self, speakable_index: int) -> Optional[RawToken]:
