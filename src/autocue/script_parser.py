@@ -36,8 +36,9 @@ PUNCTUATION_EXPANSIONS: Dict[str, List[List[str]]] = {
     "-": [["minus"], ["dash"], ["hyphen"]],
     "=": [["equals"], ["equal"], ["is"]],
     "%": [["percent"]],
-    "^": [["caret"], ["to", "the", "power", "of"]],
+    "^": [["caret"], ["to", "the", "power"], ["to", "the", "power", "of"], ["xor"], ["ex", "or"], ["exor"], ["exo"], ["x", "or"]],
     "|": [["pipe"], ["or"]],
+    "*": [["times"], ["multiply"], ["multiplied"]],
 }
 
 # Punctuation that should be silently dropped (not spoken)
@@ -64,7 +65,8 @@ class SpeakableWord:
     text: str  # The spoken/normalized form (e.g., "and" for "&", "dont" for "don't")
     raw_token_index: int  # Maps back to the RawToken that produced this
     is_expansion: bool = False  # True if from punctuation expansion
-    expansion_position: int = 0  # For multi-word expansions, which word (0-indexed)
+    # For multi-word expansions, which word (0-indexed)
+    expansion_position: int = 0
 
     def __repr__(self) -> str:
         exp = f" exp[{self.expansion_position}]" if self.is_expansion else ""
@@ -77,8 +79,10 @@ class ParsedScript:
     raw_text: str  # Original script text
     raw_tokens: List[RawToken]  # Tokens as they appear in rendered HTML
     speakable_words: List[SpeakableWord]  # Words as spoken (for matching)
-    raw_to_speakable: Dict[int, List[int]]  # Map raw_token_index -> speakable_word indices
-    speakable_to_raw: Dict[int, int]  # Map speakable_word_index -> raw_token_index
+    # Map raw_token_index -> speakable_word indices
+    raw_to_speakable: Dict[int, List[int]]
+    # Map speakable_word_index -> raw_token_index
+    speakable_to_raw: Dict[int, int]
 
     @property
     def total_raw_tokens(self) -> int:
@@ -114,12 +118,14 @@ def should_expand_punctuation(token: str) -> Optional[List[str]]:
     """
     # First check for exact multi-character matches (e.g., "<=", ">=")
     if token in PUNCTUATION_EXPANSIONS:
-        return PUNCTUATION_EXPANSIONS[token][0]  # Return first (primary) expansion
+        # Return first (primary) expansion
+        return PUNCTUATION_EXPANSIONS[token][0]
 
     # Check if the entire token is a single punctuation character
     stripped = token.strip()
     if len(stripped) == 1 and stripped in PUNCTUATION_EXPANSIONS:
-        return PUNCTUATION_EXPANSIONS[stripped][0]  # Return first (primary) expansion
+        # Return first (primary) expansion
+        return PUNCTUATION_EXPANSIONS[stripped][0]
 
     return None
 

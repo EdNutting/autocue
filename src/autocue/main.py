@@ -9,6 +9,8 @@ import logging
 import signal
 import sys
 import threading
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -23,12 +25,15 @@ from .config import (
 )
 from . import debug_log
 
+# Transcript files location (in project root)
+TRANSCRIPT_DIR = Path(__file__).parent.parent.parent / "transcripts"
+
 
 class AutocueApp:
     """
     Main autocue application that coordinates all components.
     """
-    
+
     def __init__(
         self,
         model_path: Optional[str] = None,
@@ -38,7 +43,8 @@ class AutocueApp:
         audio_device: Optional[int] = None,
         chunk_ms: int = 100,
         display_settings: Optional[dict] = None,
-        tracking_settings: Optional[dict] = None
+        tracking_settings: Optional[dict] = None,
+        save_transcript: bool = False
     ):
         self.model_path = model_path
         self.model_name = model_name
@@ -48,15 +54,58 @@ class AutocueApp:
         self.chunk_ms = chunk_ms
         self.display_settings = display_settings or {}
         self.tracking_settings = tracking_settings or {}
+        self.save_transcript = save_transcript
 
         self.audio: Optional[AudioCapture] = None
         self.transcriber: Optional[Transcriber] = None
         self.tracker: Optional[ScriptTracker] = None
         self.server: Optional[WebServer] = None
+        self.transcript_file: Optional[str] = None
 
         self.running = False
         self.audio_thread: Optional[threading.Thread] = None
-        
+
+    def _write_transcript(self, text: str, is_partial: bool):
+        """Write recognized text to the transcript file."""
+        if not self.save_transcript or not self.transcript_file:
+            return
+        # Only write final (non-partial) results to avoid duplicates
+        if not is_partial and text.strip():
+            with open(self.transcript_file, 'a') as f:
+                f.write(f"{text}\n")
+
+    async def _start_transcript(self):
+        """Start transcript recording."""
+        if self.save_transcript and self.transcript_file:
+            # Already recording
+            await self.server.send_transcript_status(True, self.transcript_file)
+            return
+
+        self.save_transcript = True
+        TRANSCRIPT_DIR.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.transcript_file = TRANSCRIPT_DIR / f"transcript_{timestamp}.txt"
+        with open(self.transcript_file, 'w') as f:
+            f.write(f"=== Transcript started at {datetime.now().isoformat()} ===\n\n")
+        print(f"Transcript recording started: {self.transcript_file}")
+        await self.server.send_transcript_status(True, self.transcript_file)
+
+    async def _stop_transcript(self):
+        """Stop transcript recording."""
+        if not self.save_transcript:
+            # Already stopped
+            await self.server.send_transcript_status(False)
+            return
+
+        if self.transcript_file:
+            with open(self.transcript_file, 'a') as f:
+                f.write(f"\n=== Transcript ended at {datetime.now().isoformat()} ===\n")
+            print(f"Transcript recording stopped: {self.transcript_file}")
+
+        self.save_transcript = False
+        self.transcript_file = None
+        await self.server.send_transcript_status(False)
+
     async def start(self):
         """Start the autocue application."""
         print("Starting Autocue...")
@@ -81,7 +130,7 @@ class AutocueApp:
             initial_settings=self.display_settings
         )
         await self.server.start()
-        
+
         print(f"\n✓ Autocue ready!")
         print(f"  Open http://{self.host}:{self.port} in your browser")
         print(f"  Press Ctrl+C to stop\n")
@@ -111,6 +160,11 @@ class AutocueApp:
                 print(f"Script loaded: {len(self.tracker.words)} words")
                 # Clear debug logs for new session
                 debug_log.clear_logs()
+                # Start transcript if preference was set (via UI checkbox or CLI flag)
+                if self.server._start_transcript_on_script or self.save_transcript:
+                    self.server._start_transcript_on_script = False  # Reset flag
+                    if not self.transcript_file:  # Don't restart if already recording
+                        await self._start_transcript()
                 
             # Check for reset request
             if self.server._reset_requested:
@@ -127,6 +181,15 @@ class AutocueApp:
                     self.tracker.jump_to(jump_to)
                     print(f"Jumped to word index {jump_to}")
 
+            # Check for transcript toggle request
+            if self.server._transcript_toggle_requested is not None:
+                enable = self.server._transcript_toggle_requested
+                self.server._transcript_toggle_requested = None
+                if enable:
+                    await self._start_transcript()
+                else:
+                    await self._stop_transcript()
+
             # Process audio
             audio_chunk = self.audio.get_chunk(timeout=0.05)
             if audio_chunk and self.tracker:
@@ -137,6 +200,9 @@ class AutocueApp:
                 )
 
                 if result and result.text:
+                    # Save transcript if enabled
+                    self._write_transcript(result.text, result.is_partial)
+
                     # Update position using optimistic matching (fast path)
                     position = self.tracker.update(
                         result.text,
@@ -283,6 +349,18 @@ def main():
         help="Save current CLI options to config file and exit"
     )
 
+    parser.add_argument(
+        "--save-transcript",
+        action="store_true",
+        help="Save a transcript of all recognized speech to ./transcripts/"
+    )
+
+    parser.add_argument(
+        "--debug-log",
+        action="store_true",
+        help="Enable debug logging to ./logs/"
+    )
+
     args = parser.parse_args()
     
     # Handle special commands
@@ -306,6 +384,11 @@ def main():
             print(f"Configuration saved to {get_config_path()}")
         return
 
+    # Enable debug logging if requested
+    if args.debug_log:
+        debug_log.enable()
+        print("Debug logging enabled (logs will be saved to ./logs/)")
+
     # Create and run the app
     app = AutocueApp(
         model_path=args.model_path,
@@ -315,7 +398,8 @@ def main():
         audio_device=args.device,
         chunk_ms=args.chunk_ms,
         display_settings=get_display_settings(config),
-        tracking_settings=get_tracking_settings(config)
+        tracking_settings=get_tracking_settings(config),
+        save_transcript=args.save_transcript
     )
     
     # Handle shutdown gracefully

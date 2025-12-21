@@ -378,6 +378,51 @@
             color: #fff;
         }
 
+        /* Transcript toggle button */
+        #transcript-btn {
+            position: fixed;
+            top: 20px;
+            left: 100px;
+            font-family: "Inter", sans-serif;
+            font-size: 12px;
+            padding: 8px 14px;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            border-radius: 20px;
+            color: #888;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        #transcript-btn:hover {
+            background: rgba(255,255,255,0.2);
+            color: #fff;
+        }
+
+        #transcript-btn.recording {
+            background: rgba(244, 67, 54, 0.3);
+            color: #f44336;
+        }
+
+        #transcript-btn.recording:hover {
+            background: rgba(244, 67, 54, 0.4);
+        }
+
+        .record-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #888;
+        }
+
+        .record-dot.active {
+            background: #f44336;
+            animation: pulse 1s infinite;
+        }
+
         /* Transcript display */
         #transcript {
             position: fixed;
@@ -452,6 +497,14 @@ The prompter will track your speech and scroll automatically."></textarea>
             </div>
 
             <div class="settings-section">
+                <div class="settings-title">Recording</div>
+                <div class="setting-row">
+                    <span class="setting-label">Save Transcript</span>
+                    <input type="checkbox" id="setting-saveTranscript" style="width: 18px; height: 18px; cursor: pointer;">
+                </div>
+            </div>
+
+            <div class="settings-section">
                 <div class="settings-title">Colors</div>
                 <div class="setting-row">
                     <span class="setting-label">Highlight</span>
@@ -503,6 +556,10 @@ The prompter will track your speech and scroll automatically."></textarea>
             <span id="status-text">Listening...</span>
         </div>
         <button id="exit-btn" onclick="exitPrompter()">← Exit</button>
+        <button id="transcript-btn" onclick="toggleTranscript()">
+            <span class="record-dot"></span>
+            <span id="transcript-btn-text">Record</span>
+        </button>
         <div id="transcript"></div>
     </div>
 
@@ -513,6 +570,7 @@ The prompter will track your speech and scroll automatically."></textarea>
         let settings = {};
         let isPaused = false;
         let scriptHtml = '';  // Pre-indexed HTML from server
+        let isRecordingTranscript = false;  // Transcript recording state
 
         // Connect WebSocket
         function connect() {
@@ -583,6 +641,39 @@ The prompter will track your speech and scroll automatically."></textarea>
                     }
                     setTimeout(() => { statusEl.textContent = ''; }, 3000);
                     break;
+
+                case 'transcript_status':
+                    updateTranscriptUI(data.recording, data.file);
+                    break;
+            }
+        }
+
+        function updateTranscriptUI(recording, file) {
+            isRecordingTranscript = recording;
+            const btn = document.getElementById('transcript-btn');
+            const btnText = document.getElementById('transcript-btn-text');
+            const dot = btn.querySelector('.record-dot');
+            const checkbox = document.getElementById('setting-saveTranscript');
+
+            if (recording) {
+                btn.classList.add('recording');
+                dot.classList.add('active');
+                btnText.textContent = 'Recording';
+                if (checkbox) checkbox.checked = true;
+            } else {
+                btn.classList.remove('recording');
+                dot.classList.remove('active');
+                btnText.textContent = 'Record';
+                if (checkbox) checkbox.checked = false;
+            }
+        }
+
+        function toggleTranscript() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'toggle_transcript',
+                    enable: !isRecordingTranscript
+                }));
             }
         }
 
@@ -640,7 +731,10 @@ The prompter will track your speech and scroll automatically."></textarea>
             // The server will respond with indexed HTML in script_updated message
             settings = getSettings();
             waitingForScript = true;
-            ws.send(JSON.stringify({ type: 'script', text: script }));
+
+            // Include transcript preference with the script
+            const saveTranscript = document.getElementById('setting-saveTranscript').checked;
+            ws.send(JSON.stringify({ type: 'script', text: script, saveTranscript: saveTranscript }));
             ws.send(JSON.stringify({ type: 'settings', settings: settings }));
         }
 
@@ -810,6 +904,9 @@ The prompter will track your speech and scroll automatically."></textarea>
 
         // Settings change handlers
         document.querySelectorAll('#settings-panel input, #settings-panel select').forEach(el => {
+            // Skip the transcript checkbox - it has its own handler
+            if (el.id === 'setting-saveTranscript') return;
+
             el.addEventListener('change', () => {
                 const newSettings = getSettings();
                 applySettings(newSettings);
@@ -817,6 +914,12 @@ The prompter will track your speech and scroll automatically."></textarea>
                     ws.send(JSON.stringify({ type: 'settings', settings: newSettings }));
                 }
             });
+        });
+
+        // Transcript checkbox handler - just stores the preference locally
+        // Recording will start when the prompter is started
+        document.getElementById('setting-saveTranscript').addEventListener('change', (e) => {
+            // No immediate action - preference is read when prompter starts
         });
 
         // Initialize

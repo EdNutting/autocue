@@ -190,6 +190,8 @@ class WebServer:
         self.total_words: int = 0
         self._reset_requested: bool = False
         self._jump_requested: Optional[int] = None
+        self._transcript_toggle_requested: Optional[bool] = None  # True=start, False=stop
+        self._start_transcript_on_script: bool = False  # Start transcript when script loads
 
         # Merge initial settings with defaults
         self.settings = self.DEFAULT_SETTINGS.copy()
@@ -271,6 +273,8 @@ class WebServer:
         
         if msg_type == "script":
             self.script_text = data.get("text", "")
+            # Capture transcript preference - will be checked when script is loaded
+            self._start_transcript_on_script = data.get("saveTranscript", False)
             # Render with word indices embedded in the HTML
             self.script_html, self.total_words, _ = render_script_with_word_indices(
                 self.script_text
@@ -348,6 +352,11 @@ class WebServer:
                     "scriptHtml": self.script_html,
                     "totalWords": self.total_words
                 })
+
+        elif msg_type == "toggle_transcript":
+            # Toggle transcript recording
+            enable = data.get("enable", False)
+            self._transcript_toggle_requested = enable
             
     async def _handle_script_upload(self, request: web.Request) -> web.Response:
         """Handle script upload via POST."""
@@ -412,6 +421,14 @@ class WebServer:
                 
         self.websockets -= dead
         
+    async def send_transcript_status(self, recording: bool, file: Optional[str] = None):
+        """Send transcript recording status to all clients."""
+        await self.broadcast({
+            "type": "transcript_status",
+            "recording": recording,
+            "file": str(file) if file else None
+        })
+
     async def send_position(
         self,
         word_index: int,

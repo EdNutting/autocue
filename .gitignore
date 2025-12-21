@@ -3,3 +3,4 @@ __pycache__
 autocue.egg-info
 .DS_Store
 .autocue.yaml
+transcripts/
