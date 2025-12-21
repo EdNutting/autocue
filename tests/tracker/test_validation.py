@@ -13,18 +13,18 @@ class TestValidationTriggering:
         tracker: ScriptTracker = ScriptTracker(
             "one two three four five six seven eight")
 
-        assert tracker.needs_validation is False
+        assert tracker.allow_validation is False
 
         # Speak 4 words - no validation yet
         texts: list[str] = ["one", "one two",
                             "one two three", "one two three four"]
         for text in texts:
             tracker.update(text)
-        assert tracker.needs_validation is False
+        assert tracker.allow_validation is False
 
         # 5th word triggers validation
         tracker.update("one two three four five")
-        assert tracker.needs_validation is True
+        assert tracker.allow_validation is True
 
     def test_validation_resets_counter(self) -> None:
         """Validation should reset the word counter."""
@@ -36,11 +36,11 @@ class TestValidationTriggering:
                             "one two three four five"]
         for text in texts:
             tracker.update(text)
-        assert tracker.needs_validation is True
+        assert tracker.allow_validation is True
 
         # Run validation
-        tracker.validate_position("one two three four five")
-        assert tracker.needs_validation is False
+        tracker.detect_jump("one two three four five")
+        assert tracker.allow_validation is False
         assert tracker.words_since_validation == 0
 
 
@@ -62,13 +62,12 @@ class TestBacktrackDetection:
             tracker.update(text)
 
         assert tracker.optimistic_position == 8
-        assert tracker.high_water_mark == 8
 
         # Simulate a real backtrack - user restarts with completely different words
         # that match the beginning of the script, not near position 8
-        tracker.needs_validation = True
+        tracker.allow_validation = True
         is_backtrack: bool
-        _validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.detect_jump(
             "the quick brown")
 
         assert is_backtrack is True
@@ -80,9 +79,9 @@ class TestBacktrackDetection:
         tracker: ScriptTracker = ScriptTracker("The quick brown fox")
 
         tracker.update("the quick")
-        tracker.needs_validation = True
+        tracker.allow_validation = True
         is_backtrack: bool
-        _validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.detect_jump(
             "the quick brown")
 
         assert is_backtrack is False
@@ -102,9 +101,9 @@ class TestBacktrackDetection:
 
         # Force validation with transcript that matches around position 3-4
         # (small deviation from optimistic position of 4)
-        tracker.needs_validation = True
+        tracker.allow_validation = True
         is_backtrack: bool
-        _validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.detect_jump(
             "quick brown fox jumps"
         )
 

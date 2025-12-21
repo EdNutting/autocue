@@ -19,7 +19,6 @@ class TestResetAndJump:
 
         assert tracker.optimistic_position == 0
         assert tracker.current_word_index == 0
-        assert tracker.high_water_mark == 0
         assert tracker.last_transcription == ""
         assert tracker.words_since_validation == 0
 
@@ -31,7 +30,6 @@ class TestResetAndJump:
 
         assert tracker.optimistic_position == 3
         assert tracker.current_word_index == 3
-        assert tracker.high_water_mark == 3
         assert tracker.last_transcription == ""
 
     def test_jump_clamps_to_valid_range(self) -> None:

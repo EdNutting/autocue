@@ -365,20 +365,20 @@ class TestBacktracking:
             "of the autocue system today im going to walk you through"
         )
         tracker.update(speech)
-        high_water: int = tracker.high_water_mark
-        assert high_water > 10, "Should have advanced significantly"
+        position_before = tracker.current_word_index
+        assert position_before > 10, "Should have advanced significantly"
 
         # Now restart from the beginning
         tracker.last_transcription = ""
-        tracker.needs_validation = True
+        tracker.allow_validation = True
         is_backtrack: bool
-        _validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.detect_jump(
             "welcome to autocue hello and welcome"
         )
 
         # Should detect backtrack
         assert is_backtrack, "Should detect backtrack to beginning"
-        assert tracker.optimistic_position < high_water, "Should have moved back"
+        assert tracker.optimistic_position < position_before, "Should have moved back"
 
     def test_backtrack_to_earlier_section(self) -> None:
         """Backtracking to a previous section should be detected."""
@@ -398,9 +398,9 @@ class TestBacktracking:
 
         # Backtrack to the intro
         tracker.last_transcription = ""
-        tracker.needs_validation = True
+        tracker.allow_validation = True
         is_backtrack: bool
-        _validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.detect_jump(
             "welcome to autocue hello and welcome to this demonstration"
         )
 
@@ -427,8 +427,8 @@ class TestBacktracking:
 
         # Restart from "the system listens"
         tracker.last_transcription = ""
-        tracker.needs_validation = True
-        tracker.validate_position("the system listens to your voice through")
+        tracker.allow_validation = True
+        tracker.detect_jump("the system listens to your voice through")
 
         # Position should have adjusted
         assert tracker.optimistic_position <= mid_pos
@@ -447,8 +447,8 @@ class TestBacktracking:
 
         # Backtrack
         tracker.last_transcription = ""
-        tracker.needs_validation = True
-        tracker.validate_position("welcome to autocue hello and welcome to")
+        tracker.allow_validation = True
+        tracker.detect_jump("welcome to autocue hello and welcome to")
         backtrack_pos: int = tracker.optimistic_position
 
         # Continue speaking from the new position
@@ -473,8 +473,8 @@ class TestBacktracking:
 
         # Now restart at the "how it works" heading
         tracker.last_transcription = ""
-        tracker.needs_validation = True
-        tracker.validate_position("how it works the system listens")
+        tracker.allow_validation = True
+        tracker.detect_jump("how it works the system listens")
 
         # Should have found a match in "how it works" section
         assert tracker.optimistic_position > 0
@@ -493,13 +493,13 @@ class TestBacktracking:
         tracker.update(speech)
 
         # Going back just 2 words shouldn't trigger backtrack
-        tracker.needs_validation = True
-        tracker.validate_position("walk you through how this teleprompter")
+        tracker.allow_validation = True
+        tracker.detect_jump("walk you through how this teleprompter")
 
         # Going back 10+ words should trigger backtrack
-        tracker.needs_validation = True
+        tracker.allow_validation = True
         is_backtrack_large: bool
-        _validated_pos, is_backtrack_large = tracker.validate_position(
+        _validated_pos, is_backtrack_large = tracker.detect_jump(
             "welcome to autocue hello and welcome"
         )
         assert is_backtrack_large, "Large backtrack should be detected"
@@ -522,8 +522,8 @@ class TestForwardJumping:
 
         # Skip ahead - go directly to "The system listens" section
         tracker.last_transcription = ""
-        tracker.needs_validation = True
-        tracker.validate_position(
+        tracker.allow_validation = True
+        tracker.detect_jump(
             "the system listens to your voice through the microphone"
         )
 
@@ -559,24 +559,24 @@ class TestForwardJumping:
         # Should have advanced past first bullet
         assert tracker.optimistic_position > pos_after_first_bullet
 
-    def test_forward_jump_updates_high_water_mark(self) -> None:
-        """Forward jumping should update the high water mark."""
+    def test_forward_jump_moves_forward(self) -> None:
+        """Forward jumping should update the current position."""
         tracker: ScriptTracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Start at beginning with correct words
         tracker.update(
             "welcome to autocue hello and welcome to this demonstration")
-        initial_hwm: int = tracker.high_water_mark
+        position_before: int = tracker.current_word_index
 
         # Jump forward via validation
         tracker.last_transcription = ""
-        tracker.needs_validation = True
-        tracker.validate_position(
+        tracker.allow_validation = True
+        tracker.detect_jump(
             "the system listens to your voice through the microphone"
         )
 
-        # High water mark should have increased
-        assert tracker.high_water_mark >= initial_hwm
+        # Current position should have increased
+        assert tracker.current_word_index >= position_before
 
 
 class TestFalsePositiveBacktrackPrevention:
@@ -662,9 +662,9 @@ Later on, the system handles more tasks. The system never fails."""
             tracker.update(text)
 
         # Force validation
-        tracker.needs_validation = True
+        tracker.allow_validation = True
         is_backtrack: bool
-        _validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.detect_jump(
             "welcome to autocue hello and")
 
         # Should NOT backtrack for small deviation
@@ -684,9 +684,9 @@ Later on, the system handles more tasks. The system never fails."""
         current_pos: int = tracker.optimistic_position
 
         # Validate with current transcript - should NOT backtrack
-        tracker.needs_validation = True
+        tracker.allow_validation = True
         is_backtrack: bool
-        _validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.detect_jump(
             "walk you through how this teleprompter works and why it might be useful"
         )
 
@@ -723,8 +723,8 @@ Later section. The quick brown fox jumps one more time. End."""
 
         # Now backtrack to "the quick brown fox" - should go to nearest one
         tracker.last_transcription = ""
-        tracker.needs_validation = True
-        tracker.validate_position(
+        tracker.allow_validation = True
+        tracker.detect_jump(
             "the quick brown fox jumps one more time"
         )
 
@@ -754,9 +754,9 @@ Later section. The quick brown fox jumps one more time. End."""
         pos_far_in: int = tracker.optimistic_position
 
         # Try to validate with text from way back at beginning
-        tracker.needs_validation = True
+        tracker.allow_validation = True
         is_backtrack: bool
-        _validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.detect_jump(
             "welcome to autocue hello and welcome"
         )
 
@@ -783,8 +783,8 @@ Third: always speak clearly and naturally. The end."""
 
         # Backtrack to "speak clearly and naturally"
         tracker.last_transcription = ""
-        tracker.needs_validation = True
-        tracker.validate_position("speak clearly and naturally")
+        tracker.allow_validation = True
+        tracker.detect_jump("speak clearly and naturally")
 
         # Should prefer the nearest match (the third occurrence)
         # Position shouldn't jump all the way back to the first occurrence
@@ -851,9 +851,9 @@ Finally, master the basics. You have completed training."""
         optimistic: int = tracker.optimistic_position
 
         # Validation shouldn't jump forward
-        tracker.needs_validation = True
+        tracker.allow_validation = True
         is_jump: bool
-        _validated_pos, is_jump = tracker.validate_position(transcript)
+        _validated_pos, is_jump = tracker.detect_jump(transcript)
 
         assert is_jump is False, "Should not detect false forward jump"
         assert abs(tracker.optimistic_position - optimistic) <= 3
@@ -870,8 +870,8 @@ Finally, master the basics. You have completed training."""
         pos2: int = tracker.optimistic_position
 
         # Validate - should NOT detect forward jump for normal advancement
-        tracker.needs_validation = True
-        tracker.validate_position(
+        tracker.allow_validation = True
+        tracker.detect_jump(
             "welcome to autocue hello and welcome to this demonstration")
 
         # Normal forward progress is not a "jump"
@@ -887,8 +887,8 @@ Finally, master the basics. You have completed training."""
             "welcome to autocue hello and welcome to this demonstration")
 
         # Validate with slightly ahead content
-        tracker.needs_validation = True
-        tracker.validate_position("demonstration of the autocue system today")
+        tracker.allow_validation = True
+        tracker.detect_jump("demonstration of the autocue system today")
 
         # Small advances shouldn't be flagged as jumps
 
@@ -1020,8 +1020,8 @@ class TestIntegrationScenarios:
         pos_after_intro: int = tracker.optimistic_position
 
         # Simulate backtrack
-        tracker.needs_validation = True
-        tracker.validate_position("today im going to walk you through")
+        tracker.allow_validation = True
+        tracker.detect_jump("today im going to walk you through")
         backtrack_pos: int = tracker.optimistic_position
 
         # Position should have adjusted backward

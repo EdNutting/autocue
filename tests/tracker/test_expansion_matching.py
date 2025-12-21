@@ -432,9 +432,9 @@ class TestExpansionValidationBug:
         assert result.is_backtrack is False, "First word of expansion should not cause backtrack"
 
         # Check if validation triggered
-        if tracker.needs_validation:
+        if tracker.allow_validation:
             was_backtrack: bool
-            _validated_pos, was_backtrack = tracker.validate_position(
+            _validated_pos, was_backtrack = tracker.detect_jump(
                 "some text and one")
             assert was_backtrack is False, "Validation during expansion should not cause backtrack"
 
@@ -442,8 +442,8 @@ class TestExpansionValidationBug:
         result = tracker.update("some text and one thousand")
         assert result.is_backtrack is False, "Second word of expansion should not cause backtrack"
 
-        if tracker.needs_validation:
-            _validated_pos, was_backtrack = tracker.validate_position(
+        if tracker.allow_validation:
+            _validated_pos, was_backtrack = tracker.detect_jump(
                 "some text and one thousand")
             assert was_backtrack is False, "Validation during expansion should not cause backtrack"
 
@@ -451,8 +451,8 @@ class TestExpansionValidationBug:
         result = tracker.update("some text and one thousand five")
         assert result.is_backtrack is False, "Third word of expansion should not cause backtrack"
 
-        if tracker.needs_validation:
-            _validated_pos, was_backtrack = tracker.validate_position(
+        if tracker.allow_validation:
+            _validated_pos, was_backtrack = tracker.detect_jump(
                 "some text and one thousand five"
             )
             assert was_backtrack is False, "Validation during expansion should not cause backtrack"
@@ -476,13 +476,13 @@ class TestExpansionValidationBug:
 
         # Advance to position before the number
         tracker.update("prefix")
-        tracker.needs_validation = False
+        tracker.allow_validation = False
 
         # Start expansion matching - position won't advance until complete
         tracker.update("prefix one")
 
         # Validation should NOT be triggered during active expansion
-        assert tracker.needs_validation is False or tracker.active_expansions, \
+        assert tracker.allow_validation is False or tracker.active_expansions, \
             "Should not trigger validation while actively matching expansion"
 
     def test_six_word_expansion_no_backtrack(self) -> None:
@@ -571,7 +571,6 @@ class TestExpansionStateClearingOnPositionChange:
         new_position: int = 0  # Simulated backtrack to beginning
         tracker.optimistic_position = new_position
         tracker.current_word_index = new_position
-        tracker.high_water_mark = new_position
         tracker.skip_disabled_count = 5
         tracker.clear_expansion_state()  # This is the fix we added
 
@@ -629,7 +628,6 @@ class TestExpansionStateClearingOnPositionChange:
         # Simulate backtrack to "as written" (position after the number)
         tracker.optimistic_position = 4  # Position of "as"
         tracker.current_word_index = 4
-        tracker.high_water_mark = 4
         tracker.clear_expansion_state()  # This is what the fix does
 
         # Now subsequent words should match the new position, not cause cascading failures

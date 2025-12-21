@@ -161,7 +161,7 @@ class TestTranscriptTracking:
         """Verify that tracking never goes backward unexpectedly."""
         tracker: ScriptTracker = ScriptTracker(number_test_script)
 
-        high_water_mark: int = 0
+        position_before: int = 0
         backtrack_count: int = 0
         largest_backtrack: int = 0
 
@@ -180,13 +180,13 @@ class TestTranscriptTracking:
             pos: ScriptPosition = tracker.update(cumulative_text)
             current_position: int = pos.speakable_index
 
-            if current_position < high_water_mark:
-                backtrack_amount: int = high_water_mark - current_position
+            if current_position < position_before:
+                backtrack_amount: int = position_before - current_position
                 backtrack_count += 1
                 if backtrack_amount > largest_backtrack:
                     largest_backtrack = backtrack_amount
             else:
-                high_water_mark = current_position
+                position_before = current_position
 
         # There should be no backtracks (or very few, very small ones)
         assert largest_backtrack <= 2, \

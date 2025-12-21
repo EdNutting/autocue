@@ -62,18 +62,20 @@ class ScriptTracker:
     backtrack_threshold: int
     max_jump_distance: int
     max_skip_distance: int
+
     parsed_script: ParsedScript
     words: list[str]
     lines: list[ScriptLine]
     word_to_line: list[int]
+
     current_word_index: int
-    high_water_mark: int
-    recent_matches: list[int]
+
     optimistic_position: int
     last_transcription: str
     words_since_validation: int
-    needs_validation: bool
+    allow_validation: bool
     skip_disabled_count: int
+
     _expansion_matcher: ExpansionMatcher
 
     def __init__(
@@ -124,15 +126,12 @@ class ScriptTracker:
 
         # Tracking state (all indices are speakable word indices)
         self.current_word_index = 0
-        self.high_water_mark = 0  # Furthest position reached
-        # Recent match positions for smoothing
-        self.recent_matches: list[int] = []
 
         # Optimistic tracking state
         self.optimistic_position = 0  # Fast-path position for immediate UI updates
         self.last_transcription = ""  # Track previous transcript to detect new words
         self.words_since_validation = 0  # Counter for validation triggering
-        self.needs_validation = False  # Flag when validation should run
+        self.allow_validation = False  # Flag when validation should run
 
         # After backtrack, disable skip logic until we've matched a few words
         # This prevents old transcript words from incorrectly matching future positions
@@ -281,9 +280,8 @@ class ScriptTracker:
         if match_len > 0:
             return current_words[match_len:]
 
-        # If no prefix match, this might be a new utterance
-        # Return all current words but be conservative
-        return current_words[-3:] if len(current_words) > 3 else current_words
+        # If no prefix match, this is a new utterance
+        return current_words
 
     def _transcript_matches_position(self, transcript_words: list[str], position: int) -> bool:
         """
@@ -328,7 +326,7 @@ class ScriptTracker:
         """Check if a word is a common filler word that can be skipped."""
         return self._normalize_word(word) in self.FILLER_WORDS
 
-    def _advance_optimistically(self, new_words: list[str]) -> int:
+    def _advance(self, new_words: list[str]) -> int:
         """
         Try to advance position based on new spoken words.
 
@@ -546,8 +544,7 @@ class ScriptTracker:
             0, self.current_word_index - self.max_jump_distance)
         search_end: int = min(
             len(self.words),
-            max(self.high_water_mark, self.current_word_index) +
-            self.max_jump_distance
+            self.current_word_index + self.max_jump_distance
         )
 
         # Also always search from the beginning of current line
@@ -555,14 +552,6 @@ class ScriptTracker:
             current_line: int = self.word_to_line[self.current_word_index]
             line_start: int = self.lines[current_line].word_start_index
             search_start = min(search_start, line_start)
-
-        # Only log at DEBUG level - this is called frequently
-        # logger.debug(
-        #     "[FIND BEST MATCH] search_start=%d, search_end=%d, current_word_index=%d, "
-        #     "high_water_mark=%d, spoken='%s'",
-        #     search_start, search_end, self.current_word_index, self.high_water_mark,
-        #     spoken_normalized[:50] + "..." if len(spoken_normalized) > 50 else spoken_normalized
-        # )
 
         best_index: int = self.current_word_index
         best_score: float = 0.0
@@ -603,11 +592,11 @@ class ScriptTracker:
 
     def update(self, transcription: str, is_partial: bool = True) -> ScriptPosition:
         """
-        Update position based on new transcription using optimistic matching.
+        Update position based on new transcription.
 
         Uses a two-track approach:
         1. Optimistic: Advance word-by-word for immediate UI response
-        2. Validation: Triggered after N words to catch errors/backtracks
+        2. Validation: Triggered to catch errors/backtracks
 
         Args:
             transcription: The transcribed text
@@ -616,7 +605,6 @@ class ScriptTracker:
         Returns:
             Updated ScriptPosition (uses optimistic position for responsiveness)
         """
-        # Update position using optimistic matching (fast path)
 
         if not transcription.strip():
             return self.current_position()
@@ -624,18 +612,11 @@ class ScriptTracker:
         # Extract only the NEW words from the transcription
         new_words: list[str] = self.extract_new_words(transcription)
 
-        # Try to advance optimistically based on new words
-        words_advanced: int = self._advance_optimistically(new_words)
+        if not new_words:
+            return self.current_position()
 
-        # Verbose logging commented out to reduce noise
-        # if new_words and (words_advanced > 0 or self.high_water_mark > 0):
-        #     logger.debug(
-        #         "[UPDATE] new_words=%s, words_advanced=%d, optimistic_position=%d, "
-        #         "high_water_mark=%d, words_since_validation=%d",
-        #         new_words[:5] if len(new_words) > 5 else new_words,
-        #         words_advanced, self.optimistic_position, self.high_water_mark,
-        #         self.words_since_validation
-        #     )
+        # Try to advance optimistically based on new words
+        words_advanced: int = self._advance(new_words)
 
         is_backtrack: bool = False
 
@@ -646,13 +627,9 @@ class ScriptTracker:
             # Track words for validation triggering
             self.words_since_validation += len(new_words)
 
-            # Trigger validation after every 5 words
+            # Only allow validation after every 5 words
             if self.words_since_validation >= 5:
-                self.needs_validation = True
-
-            # Update high water mark
-            self.high_water_mark = max(
-                self.high_water_mark, self.optimistic_position)
+                self.allow_validation = True
 
             # Sync current_word_index with optimistic for display
             self.current_word_index = self.optimistic_position
@@ -665,10 +642,8 @@ class ScriptTracker:
         else:
             # No words matched - this could indicate a backtrack or forward jump!
             # Immediately validate if we have enough new words to work with
-            if new_words and len(new_words) >= 3:
-                _, is_backtrack = self.validate_position(transcription)
-            elif new_words and self.high_water_mark > 0:
-                self.needs_validation = True
+            if len(new_words) >= 3:
+                _, is_backtrack = self.detect_jump(transcription)
 
         # Store transcription for next comparison
         self.last_transcription = transcription
@@ -680,19 +655,19 @@ class ScriptTracker:
             word_index=raw_index,  # Raw token index for UI highlighting
             line_index=self._word_to_line_index(self.optimistic_position),
             confidence=100.0 if words_advanced > 0 else 0.0,
-            matched_words=new_words[-3:] if new_words else [],
+            matched_words=new_words,
             is_backtrack=is_backtrack,
             speakable_index=self.optimistic_position  # Internal tracking index
         )
 
         # Check if validation is needed (every 5 words)
         position.is_backtrack = False
-        if self.needs_validation:
+        if self.allow_validation:
             logger.debug(
                 "[VALIDATION] Triggering validation at position %d",
                 position.word_index
             )
-            validated_pos, is_backtrack = self.validate_position(transcription)
+            validated_pos, is_backtrack = self.detect_jump(transcription)
             position.is_backtrack = is_backtrack
             if position.is_backtrack or validated_pos != position.word_index:
                 # Position was corrected by validation
@@ -703,16 +678,10 @@ class ScriptTracker:
                 )
                 position = self.current_position()
                 position.is_backtrack = is_backtrack
-            # if position.is_backtrack:
-            #     logger.warning(
-            #         "[BACKTRACK] Sending backtrack signal to clients, "
-            #         "new position=%d",
-            #         position.word_index
-            #     )
 
         return position
 
-    def validate_position(self, transcription: str) -> tuple[int, bool]:
+    def detect_jump(self, transcription: str) -> tuple[int, bool]:
         """
         Validate current position using window-based fuzzy matching.
         Called periodically to catch errors and detect backtracks.
@@ -725,7 +694,7 @@ class ScriptTracker:
             Tuple of (validated_position, is_backtrack)
         """
         self.words_since_validation = 0
-        self.needs_validation = False
+        self.allow_validation = False
 
         if not transcription.strip():
             return self.optimistic_position, False
@@ -768,44 +737,23 @@ class ScriptTracker:
         # far away in the script (e.g., repeated phrases in different paragraphs)
         jump_distance: int = abs(position_diff)
         if jump_distance > self.max_jump_distance:
-            logger.info(
-                "[JUMP REJECTED] Jump too large: %d words (max=%d). "
-                "best_index=%d, optimistic_position=%d. Staying at current position.",
-                jump_distance, self.max_jump_distance, best_index, self.optimistic_position
-            )
             return self.optimistic_position, False
 
         # Check for backtrack - only if validated position is significantly behind
-        # the high water mark (more than backtrack_threshold words)
         #
         # Backtrack conditions (all must be true):
-        # 1. best_index < high_water_mark - backtrack_threshold
+        # 1. best_index < current_word_index - backtrack_threshold
         #    (validated position is significantly behind the furthest we've reached)
-        # 2. high_water_mark > 0
+        # 2. current_word_index > 0
         #    (we've actually made forward progress)
         # 3. position_diff > 2
         #    (optimistic is significantly ahead of validated - confirms mismatch)
 
-        cond1: bool = best_index < self.high_water_mark - self.backtrack_threshold
-        cond2: bool = self.high_water_mark > 0
+        cond1: bool = best_index < self.current_word_index - self.backtrack_threshold
+        cond2: bool = self.current_word_index > 0
         cond3: bool = position_diff > 2
 
         is_backtrack: bool = cond1 and cond2 and cond3
-
-        # Log backtrack detection evaluation with individual conditions
-        logger.info(
-            "[BACKTRACK CHECK] best_index=%d, high_water_mark=%d, threshold=%d, "
-            "optimistic_position=%d, position_diff=%d, confidence=%.1f",
-            best_index, self.high_water_mark, self.backtrack_threshold,
-            self.optimistic_position, position_diff, confidence
-        )
-        logger.info(
-            "[BACKTRACK CONDITIONS] cond1(best<%d-%d=%d): %s, cond2(hwm>0): %s, "
-            "cond3(diff>2): %s => is_backtrack=%s",
-            self.high_water_mark, self.backtrack_threshold,
-            self.high_water_mark - self.backtrack_threshold,
-            cond1, cond2, cond3, is_backtrack
-        )
 
         if is_backtrack:
             # User went back - but they've continued speaking past the backtrack point.
@@ -837,7 +785,6 @@ class ScriptTracker:
 
             self.optimistic_position = adjusted_position
             self.current_word_index = adjusted_position
-            self.high_water_mark = adjusted_position
             # Keep transcript to continue from here
             self.last_transcription = transcription
             # Disable skip logic for next 5 words to prevent matching old transcript remnants
@@ -850,7 +797,7 @@ class ScriptTracker:
         # position_diff < 0 means best_index > optimistic_position (user is ahead)
         is_forward_jump: bool = (
             position_diff < -self.backtrack_threshold and
-            best_index > self.high_water_mark
+            best_index > self.current_word_index
         )
 
         if is_forward_jump:
@@ -879,7 +826,6 @@ class ScriptTracker:
 
             self.optimistic_position = adjusted_position
             self.current_word_index = adjusted_position
-            self.high_water_mark = adjusted_position
             self.last_transcription = transcription
             # Disable skip logic for next 5 words to prevent matching old transcript remnants
             self.skip_disabled_count = 5
@@ -923,7 +869,6 @@ class ScriptTracker:
             )
             self.optimistic_position = adjusted_position
             self.current_word_index = adjusted_position
-            self.high_water_mark = max(self.high_water_mark, adjusted_position)
             self.last_transcription = transcription
             # Clear expansion state - we're at a new position, any in-progress expansion is invalid
             self.clear_expansion_state()
@@ -949,13 +894,11 @@ class ScriptTracker:
     def reset(self) -> None:
         """Reset tracking to the beginning of the script."""
         self.current_word_index = 0
-        self.high_water_mark = 0
-        self.recent_matches = []
         # Reset optimistic state
         self.optimistic_position = 0
         self.last_transcription = ""
         self.words_since_validation = 0
-        self.needs_validation = False
+        self.allow_validation = False
         self.skip_disabled_count = 0
         # Reset expansion state
         self.clear_expansion_state()
@@ -965,13 +908,11 @@ class ScriptTracker:
         word_index = max(0, min(word_index, len(
             self.words) - 1)) if self.words else 0
         self.current_word_index = word_index
-        self.high_water_mark = word_index
-        self.recent_matches = [word_index]
         # Sync optimistic state
         self.optimistic_position = word_index
         self.last_transcription = ""
         self.words_since_validation = 0
-        self.needs_validation = False
+        self.allow_validation = False
         self.skip_disabled_count = 0
         # Clear expansion state - we're at a new position, any in-progress expansion is invalid
         self.clear_expansion_state()

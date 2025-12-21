@@ -38,9 +38,9 @@ class TestRepeatedWords:
 
         # Validation with "the lazy" - matches position 3-4
         # Should trust optimistic since deviation is small
-        tracker.needs_validation = True
+        tracker.allow_validation = True
         is_backtrack: bool
-        _validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.detect_jump(
             "the lazy dog")
 
         # Should NOT backtrack - trust optimistic for small deviation
@@ -88,7 +88,6 @@ class TestBacktrackSkipDisable:
         # but transcript still contains "subsection" from the later position
         tracker.optimistic_position = 2  # at "a" (before "glance")
         tracker.current_word_index = 2
-        tracker.high_water_mark = 2
         tracker.skip_disabled_count = 5  # This is what the backtrack code sets
         tracker.last_transcription = ""  # Cleared by backtrack
 
@@ -138,11 +137,10 @@ class TestBacktrackSkipDisable:
         assert tracker.skip_disabled_count == 0
 
         # Simulate backtrack via validate_position
-        tracker.high_water_mark = 3
         tracker.optimistic_position = 3
         # Force a backtrack condition
         is_backtrack: bool
-        _validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.detect_jump(
             "beginning middle")
 
         # If backtrack detected, skip logic should be disabled

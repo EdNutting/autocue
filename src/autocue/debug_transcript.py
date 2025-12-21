@@ -107,7 +107,6 @@ def replay_transcript(
         cumulative_transcript = line
 
         position_before: int = tracker.optimistic_position
-        high_water_before: int = tracker.high_water_mark
 
         # Update tracker
         result = tracker.update(cumulative_transcript, is_partial=False)
@@ -119,7 +118,7 @@ def replay_transcript(
         event_type: EventType
         if is_backtrack:
             event_type = "BACKTRACK"
-        elif position_after > high_water_before + 5:
+        elif position_after > position_before + 5:
             event_type = "FORWARD_JUMP"
         elif position_after > position_before:
             event_type = "advance"
@@ -136,10 +135,7 @@ def replay_transcript(
         )
 
         # Log the tracking result
-        details: str = (
-            f"pos: {position_before} -> {position_after} "
-            f"(hwm: {high_water_before} -> {tracker.high_water_mark})"
-        )
+        details: str = f"pos: {position_before} -> {position_after}"
 
         if event_type in ("BACKTRACK", "FORWARD_JUMP") or verbose:
             if event_type == "BACKTRACK":
@@ -148,20 +144,12 @@ def replay_transcript(
                     f"      Position: {position_before} -> {position_after}\n"
                 )
                 output.write(
-                    f"      High water mark: {high_water_before} -> "
-                    f"{tracker.high_water_mark}\n"
-                )
-                output.write(
                     f"      Script word at new position: \"{script_word}\"\n"
                 )
             elif event_type == "FORWARD_JUMP":
                 output.write("  *** FORWARD JUMP DETECTED ***\n")
                 output.write(
                     f"      Position: {position_before} -> {position_after}\n"
-                )
-                output.write(
-                    f"      High water mark: {high_water_before} -> "
-                    f"{tracker.high_water_mark}\n"
                 )
                 output.write(
                     f"      Script word at new position: \"{script_word}\"\n"
@@ -182,10 +170,10 @@ def replay_transcript(
         events.append(event)
 
         # Trigger validation if needed (simulate main loop behavior)
-        if tracker.needs_validation:
+        if tracker.allow_validation:
             validated_pos: int
             was_backtrack: bool
-            validated_pos, was_backtrack = tracker.validate_position(
+            validated_pos, was_backtrack = tracker.detect_jump(
                 cumulative_transcript)
             if was_backtrack or validated_pos != position_after:
                 output.write(
@@ -209,7 +197,6 @@ def replay_transcript(
     output.write(f"Total lines processed: {len(transcript_lines)}\n")
     output.write(
         f"Final position: {tracker.optimistic_position} / {len(tracker.words)}\n")
-    output.write(f"High water mark: {tracker.high_water_mark}\n")
     output.write(f"Advances: {len(advances)}\n")
     output.write(f"Backtracks: {len(backtracks)}\n")
     output.write(f"Forward jumps: {len(forward_jumps)}\n")
@@ -293,7 +280,6 @@ def replay_transcript_word_by_word(
             partial_transcript = " ".join(words[:word_idx + 1])
 
             position_before: int = tracker.optimistic_position
-            high_water_before: int = tracker.high_water_mark
 
             # Update with partial result
             is_final: bool = word_idx == len(words) - 1
@@ -309,7 +295,7 @@ def replay_transcript_word_by_word(
             event_type: EventType
             if is_backtrack:
                 event_type = "BACKTRACK"
-            elif position_after > high_water_before + 5:
+            elif position_after > position_before + 5:
                 event_type = "FORWARD_JUMP"
             elif position_after > position_before:
                 event_type = "advance"
@@ -355,10 +341,6 @@ def replay_transcript_word_by_word(
                         f"      Position: {position_before} -> "
                         f"{position_after}\n"
                     )
-                    output.write(
-                        f"      High water mark: "
-                        f"{high_water_before} -> {tracker.high_water_mark}\n"
-                    )
                     script_word_after: str = (
                         tracker.words[position_after]
                         if position_after < len(tracker.words) else "<END>"
@@ -372,10 +354,6 @@ def replay_transcript_word_by_word(
                     output.write(
                         f"      Position: {position_before} -> "
                         f"{position_after}\n"
-                    )
-                    output.write(
-                        f"      High water mark: "
-                        f"{high_water_before} -> {tracker.high_water_mark}\n"
                     )
                     script_word_after: str = (
                         tracker.words[position_after]
@@ -410,11 +388,11 @@ def replay_transcript_word_by_word(
             events.append(event)
 
             # Trigger validation if needed
-            if tracker.needs_validation:
+            if tracker.allow_validation:
                 validated_pos: int
                 was_backtrack: bool
                 validated_pos, was_backtrack = (
-                    tracker.validate_position(partial_transcript)
+                    tracker.detect_jump(partial_transcript)
                 )
                 if was_backtrack or validated_pos != position_after:
                     output.write(
@@ -442,7 +420,6 @@ def replay_transcript_word_by_word(
     output.write(f"Total words processed: {word_count}\n")
     output.write(
         f"Final position: {tracker.optimistic_position} / {len(tracker.words)}\n")
-    output.write(f"High water mark: {tracker.high_water_mark}\n")
     output.write(f"Advances: {len(advances)}\n")
     output.write(f"No advances: {len(no_advances)}\n")
     output.write(f"Backtracks: {len(backtracks)}\n")
