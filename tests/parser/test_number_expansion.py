@@ -10,21 +10,20 @@ Tests cover:
 - Edge cases
 """
 
-from typing import List, Optional
 
-import pytest
 import markdown
+
 from src.autocue.number_expander import (
-    is_number_token,
-    get_number_expansions,
-    expand_integer,
-    expand_decimal,
-    expand_ordinal,
-    expand_mixed_alphanumeric,
     COMMON_FRACTIONS,
     UNIT_EXPANSIONS,
+    expand_decimal,
+    expand_integer,
+    expand_mixed_alphanumeric,
+    expand_ordinal,
+    get_number_expansions,
+    is_number_token,
 )
-from src.autocue.script_parser import parse_script, get_all_expansions, ParsedScript, SpeakableWord
+from src.autocue.script_parser import ParsedScript, SpeakableWord, get_all_expansions, parse_script
 
 
 class TestIsNumberToken:
@@ -108,7 +107,7 @@ class TestExpandInteger:
 
     def test_hundred(self) -> None:
         """100 should expand to multiple forms."""
-        expansions: List[List[str]] = expand_integer(100)
+        expansions: list[list[str]] = expand_integer(100)
 
         # Should have "one hundred"
         assert ["one", "hundred"] in expansions
@@ -119,7 +118,7 @@ class TestExpandInteger:
 
     def test_eleven_hundred(self) -> None:
         """1100 should have 'eleven hundred' alternative."""
-        expansions: List[List[str]] = expand_integer(1100)
+        expansions: list[list[str]] = expand_integer(1100)
 
         # Should have "one thousand one hundred"
         assert any("thousand" in exp for exp in expansions)
@@ -130,27 +129,27 @@ class TestExpandInteger:
 
     def test_twelve_hundred(self) -> None:
         """1200 should have 'twelve hundred' alternative."""
-        expansions: List[List[str]] = expand_integer(1200)
+        expansions: list[list[str]] = expand_integer(1200)
 
         assert ["twelve", "hundred"] in expansions
 
     def test_thousand(self) -> None:
         """1000 should have 'a thousand' alternative."""
-        expansions: List[List[str]] = expand_integer(1000)
+        expansions: list[list[str]] = expand_integer(1000)
 
         assert ["one", "thousand"] in expansions
         assert ["a", "thousand"] in expansions
 
     def test_large_number(self) -> None:
         """Large numbers should still work."""
-        expansions: List[List[str]] = expand_integer(1000000)
+        expansions: list[list[str]] = expand_integer(1000000)
 
         # Should have "one million"
         assert any("million" in exp for exp in expansions)
 
     def test_small_numbers(self) -> None:
         """Small numbers should work."""
-        expansions: List[List[str]] = expand_integer(1)
+        expansions: list[list[str]] = expand_integer(1)
         assert ["one"] in expansions
 
         expansions = expand_integer(10)
@@ -161,7 +160,7 @@ class TestExpandInteger:
 
     def test_negative_integer(self) -> None:
         """Negative integers should have 'minus' prefix."""
-        expansions: List[List[str]] = expand_integer(-100)
+        expansions: list[list[str]] = expand_integer(-100)
 
         # Primary should start with minus
         assert expansions[0][0] == "minus"
@@ -173,7 +172,7 @@ class TestExpandDecimal:
 
     def test_point_zero_seven(self) -> None:
         """3.07 should expand with zero/oh variants."""
-        expansions: List[List[str]] = expand_decimal("3.07")
+        expansions: list[list[str]] = expand_decimal("3.07")
 
         # Should have "three point zero seven"
         assert ["three", "point", "zero", "seven"] in expansions
@@ -182,7 +181,7 @@ class TestExpandDecimal:
 
     def test_point_three(self) -> None:
         """0.3 should have 'point three' alternative."""
-        expansions: List[List[str]] = expand_decimal("0.3")
+        expansions: list[list[str]] = expand_decimal("0.3")
 
         # Should have "zero point three"
         assert ["zero", "point", "three"] in expansions
@@ -194,7 +193,7 @@ class TestExpandDecimal:
 
     def test_half(self) -> None:
         """0.5 should expand to 'half' alternatives."""
-        expansions: List[List[str]] = expand_decimal("0.5")
+        expansions: list[list[str]] = expand_decimal("0.5")
 
         # Should have fraction forms
         assert ["half"] in expansions or ["one", "half"] in expansions
@@ -203,13 +202,13 @@ class TestExpandDecimal:
 
     def test_quarter(self) -> None:
         """0.25 should expand to 'quarter' alternatives."""
-        expansions: List[List[str]] = expand_decimal("0.25")
+        expansions: list[list[str]] = expand_decimal("0.25")
 
         assert ["quarter"] in expansions or ["one", "quarter"] in expansions
 
     def test_third(self) -> None:
         """0.33 should expand to 'third' alternatives."""
-        expansions: List[List[str]] = expand_decimal("0.33")
+        expansions: list[list[str]] = expand_decimal("0.33")
 
         assert ["third"] in expansions or ["one", "third"] in expansions
         # Should also have "zero point three three"
@@ -217,13 +216,13 @@ class TestExpandDecimal:
 
     def test_non_leading_zero_decimal(self) -> None:
         """Decimals like 3.14 should work."""
-        expansions: List[List[str]] = expand_decimal("3.14")
+        expansions: list[list[str]] = expand_decimal("3.14")
 
         assert ["three", "point", "one", "four"] in expansions
 
     def test_negative_decimal(self) -> None:
         """Negative decimals should have 'minus' prefix."""
-        expansions: List[List[str]] = expand_decimal("-3.14")
+        expansions: list[list[str]] = expand_decimal("-3.14")
 
         assert expansions[0][0] == "minus"
 
@@ -233,32 +232,32 @@ class TestExpandOrdinal:
 
     def test_first(self) -> None:
         """1st should expand to 'first'."""
-        expansions: List[List[str]] = expand_ordinal("1st")
+        expansions: list[list[str]] = expand_ordinal("1st")
         assert ["first"] in expansions
 
     def test_second(self) -> None:
         """2nd should expand to 'second'."""
-        expansions: List[List[str]] = expand_ordinal("2nd")
+        expansions: list[list[str]] = expand_ordinal("2nd")
         assert ["second"] in expansions
 
     def test_third(self) -> None:
         """3rd should expand to 'third'."""
-        expansions: List[List[str]] = expand_ordinal("3rd")
+        expansions: list[list[str]] = expand_ordinal("3rd")
         assert ["third"] in expansions
 
     def test_fourth(self) -> None:
         """4th should expand to 'fourth'."""
-        expansions: List[List[str]] = expand_ordinal("4th")
+        expansions: list[list[str]] = expand_ordinal("4th")
         assert ["fourth"] in expansions
 
     def test_twenty_third(self) -> None:
         """23rd should expand to 'twenty third'."""
-        expansions: List[List[str]] = expand_ordinal("23rd")
+        expansions: list[list[str]] = expand_ordinal("23rd")
         assert ["twenty", "third"] in expansions
 
     def test_one_hundred_first(self) -> None:
         """101st should expand correctly."""
-        expansions: List[List[str]] = expand_ordinal("101st")
+        expansions: list[list[str]] = expand_ordinal("101st")
         assert any("first" in exp for exp in expansions)
 
     def test_case_insensitive(self) -> None:
@@ -273,24 +272,24 @@ class TestExpandMixedAlphanumeric:
 
     def test_m3(self) -> None:
         """M3 should expand to 'm three'."""
-        expansions: List[List[str]] = expand_mixed_alphanumeric("M3")
+        expansions: list[list[str]] = expand_mixed_alphanumeric("M3")
         assert ["m", "three"] in expansions
 
     def test_v8(self) -> None:
         """V8 should expand to 'v eight'."""
-        expansions: List[List[str]] = expand_mixed_alphanumeric("V8")
+        expansions: list[list[str]] = expand_mixed_alphanumeric("V8")
         assert ["v", "eight"] in expansions
 
     def test_4k(self) -> None:
         """4K should expand with k and thousand."""
-        expansions: List[List[str]] = expand_mixed_alphanumeric("4K")
+        expansions: list[list[str]] = expand_mixed_alphanumeric("4K")
 
         assert ["four", "k"] in expansions
         assert ["four", "thousand"] in expansions
 
     def test_100gb(self) -> None:
         """100GB should expand with multiple forms."""
-        expansions: List[List[str]] = expand_mixed_alphanumeric("100GB")
+        expansions: list[list[str]] = expand_mixed_alphanumeric("100GB")
 
         # Should have letter-by-letter form
         assert any("g" in exp and "b" in exp for exp in expansions)
@@ -299,21 +298,21 @@ class TestExpandMixedAlphanumeric:
 
     def test_5m_metres(self) -> None:
         """5m should expand to metres/meters."""
-        expansions: List[List[str]] = expand_mixed_alphanumeric("5m")
+        expansions: list[list[str]] = expand_mixed_alphanumeric("5m")
 
         assert ["five", "m"] in expansions
         assert any("metres" in exp or "meters" in exp for exp in expansions)
 
     def test_10s_seconds(self) -> None:
         """10s should expand to seconds."""
-        expansions: List[List[str]] = expand_mixed_alphanumeric("10s")
+        expansions: list[list[str]] = expand_mixed_alphanumeric("10s")
 
         assert ["ten", "s"] in expansions
         assert any("seconds" in exp for exp in expansions)
 
     def test_4_point_05_ghz(self) -> None:
         """4.05GHz should handle decimal + suffix."""
-        expansions: List[List[str]] = expand_mixed_alphanumeric("4.05GHz")
+        expansions: list[list[str]] = expand_mixed_alphanumeric("4.05GHz")
 
         # Should have the number part expanded
         assert any("point" in exp for exp in expansions)
@@ -322,7 +321,7 @@ class TestExpandMixedAlphanumeric:
 
     def test_multi_letter_prefix(self) -> None:
         """Multi-letter prefixes like iPhone12 should work."""
-        expansions: List[List[str]] = expand_mixed_alphanumeric("iPhone12")
+        expansions: list[list[str]] = expand_mixed_alphanumeric("iPhone12")
 
         # Long prefixes (>2 chars) are kept as words, not spelled out
         assert any(exp[0] == "iphone" for exp in expansions)
@@ -330,7 +329,7 @@ class TestExpandMixedAlphanumeric:
 
     def test_500ms_milliseconds(self) -> None:
         """500ms should expand to 'five hundred milliseconds'."""
-        expansions: List[List[str]] = expand_mixed_alphanumeric("500ms")
+        expansions: list[list[str]] = expand_mixed_alphanumeric("500ms")
 
         # Should have letter-by-letter form with number expanded
         assert any(
@@ -358,33 +357,33 @@ class TestGetNumberExpansions:
 
     def test_returns_list_for_numbers(self) -> None:
         """Numbers should return a list of expansions."""
-        result: Optional[List[List[str]]] = get_number_expansions("100")
+        result: list[list[str]] | None = get_number_expansions("100")
         assert isinstance(result, list)
         assert len(result) > 0
         assert all(isinstance(exp, list) for exp in result)
 
     def test_primary_expansion_first(self) -> None:
         """Primary (most common) expansion should be first."""
-        result: Optional[List[List[str]]] = get_number_expansions("100")
+        result: list[list[str]] | None = get_number_expansions("100")
         # First expansion should be the cardinal form
         assert result is not None, "100 should have expansions"
         assert result[0] == ["one", "hundred"]
 
     def test_ordinal_detection(self) -> None:
         """Ordinals should be properly detected and expanded."""
-        result: Optional[List[List[str]]] = get_number_expansions("1st")
+        result: list[list[str]] | None = get_number_expansions("1st")
         assert result is not None
         assert ["first"] in result
 
     def test_comma_integer_detection(self) -> None:
         """Comma-separated integers should be detected."""
-        result: Optional[List[List[str]]] = get_number_expansions("1,000")
+        result: list[list[str]] | None = get_number_expansions("1,000")
         assert result is not None
         assert ["one", "thousand"] in result
 
     def test_eleven_thousand_comma(self) -> None:
         """'11,000' should expand to 'eleven thousand'."""
-        result: Optional[List[List[str]]] = get_number_expansions("11,000")
+        result: list[list[str]] | None = get_number_expansions("11,000")
         assert result is not None
         assert ["eleven", "thousand"] in result
         # Should also have digit-by-digit
@@ -392,19 +391,19 @@ class TestGetNumberExpansions:
 
     def test_decimal_detection(self) -> None:
         """Decimals should be detected."""
-        result: Optional[List[List[str]]] = get_number_expansions("3.14")
+        result: list[list[str]] | None = get_number_expansions("3.14")
         assert result is not None
         assert any("point" in exp for exp in result)
 
     def test_mixed_prefix_detection(self) -> None:
         """Mixed prefix tokens should be detected."""
-        result: Optional[List[List[str]]] = get_number_expansions("M3")
+        result: list[list[str]] | None = get_number_expansions("M3")
         assert result is not None
         assert ["m", "three"] in result
 
     def test_mixed_suffix_detection(self) -> None:
         """Mixed suffix tokens should be detected."""
-        result: Optional[List[List[str]]] = get_number_expansions("4K")
+        result: list[list[str]] | None = get_number_expansions("4K")
         assert result is not None
         assert ["four", "k"] in result
 
@@ -463,7 +462,7 @@ class TestUnitExpansions:
 
     def test_unit_has_letter_and_word_forms(self) -> None:
         """Units should have both letter-by-letter and word forms."""
-        gb_expansions: List[List[str]] = UNIT_EXPANSIONS["gb"]
+        gb_expansions: list[list[str]] = UNIT_EXPANSIONS["gb"]
         # Should have letter form
         assert ["g", "b"] in gb_expansions
         # Should have word form
@@ -481,7 +480,7 @@ class TestIntegrationWithParser:
         parsed: ParsedScript = parse_script(script, html)
 
         # Find the expansion word for "100"
-        expansion_words: List[SpeakableWord] = [
+        expansion_words: list[SpeakableWord] = [
             sw for sw in parsed.speakable_words if sw.is_expansion]
         # ONE speakable word per expandable token
         assert len(expansion_words) == 1
@@ -498,7 +497,7 @@ class TestIntegrationWithParser:
             script, extensions=['nl2br', 'sane_lists'])
         parsed: ParsedScript = parse_script(script, html)
 
-        words: List[str] = [sw.text for sw in parsed.speakable_words]
+        words: list[str] = [sw.text for sw in parsed.speakable_words]
 
         assert "first" in words
 
@@ -510,7 +509,7 @@ class TestIntegrationWithParser:
         parsed: ParsedScript = parse_script(script, html)
 
         # Find the expansion word for "3.14"
-        expansion_words: List[SpeakableWord] = [
+        expansion_words: list[SpeakableWord] = [
             sw for sw in parsed.speakable_words if sw.is_expansion]
         # ONE speakable word per expandable token
         assert len(expansion_words) == 1
@@ -528,7 +527,7 @@ class TestIntegrationWithParser:
         parsed: ParsedScript = parse_script(script, html)
 
         # Find the expansion word for "4K"
-        expansion_words: List[SpeakableWord] = [
+        expansion_words: list[SpeakableWord] = [
             sw for sw in parsed.speakable_words if sw.is_expansion]
         # ONE speakable word per expandable token
         assert len(expansion_words) == 1
@@ -540,7 +539,7 @@ class TestIntegrationWithParser:
 
     def test_get_all_expansions_returns_number_alternatives(self) -> None:
         """get_all_expansions should return number alternatives."""
-        expansions: Optional[List[List[str]]] = get_all_expansions("100")
+        expansions: list[list[str]] | None = get_all_expansions("100")
         assert expansions is not None
         assert len(expansions) > 1  # Should have multiple alternatives
         assert ["one", "hundred"] in expansions
@@ -553,7 +552,7 @@ class TestIntegrationWithParser:
         parsed: ParsedScript = parse_script(script, html)
 
         # Find the expansion words
-        expansion_words: List[SpeakableWord] = [
+        expansion_words: list[SpeakableWord] = [
             sw for sw in parsed.speakable_words if sw.is_expansion]
         # ONE speakable word per expandable token
         assert len(expansion_words) == 1
@@ -587,7 +586,7 @@ class TestIntegrationWithParser:
         parsed: ParsedScript = parse_script(script, html)
 
         # Find the expansion word for "500ms"
-        expansion_words: List[SpeakableWord] = [
+        expansion_words: list[SpeakableWord] = [
             sw for sw in parsed.speakable_words if sw.is_expansion]
         # ONE speakable word per expandable token
         assert len(expansion_words) == 1
@@ -607,24 +606,23 @@ class TestEdgeCases:
 
     def test_zero(self) -> None:
         """Zero should expand correctly."""
-        expansions: List[List[str]] = expand_integer(0)
+        expansions: list[list[str]] = expand_integer(0)
         assert ["zero"] in expansions
 
     def test_very_large_number(self) -> None:
         """Very large numbers should work."""
-        expansions: List[List[str]] = expand_integer(1000000000)
+        expansions: list[list[str]] = expand_integer(1000000000)
         assert any("billion" in exp for exp in expansions)
 
     def test_leading_zeros_decimal(self) -> None:
         """Decimals with multiple leading zeros should work."""
-        expansions: List[List[str]] = expand_decimal("0.007")
+        expansions: list[list[str]] = expand_decimal("0.007")
         assert ["zero", "point", "zero", "zero", "seven"] in expansions
 
     def test_whitespace_handling(self) -> None:
         """Tokens with whitespace should be handled."""
         assert is_number_token("  100  ") is True
-        expansions: Optional[List[List[str]]
-                             ] = get_number_expansions("  100  ")
+        expansions: list[list[str]] | None = get_number_expansions("  100  ")
         assert expansions is not None
 
     def test_single_digit_ordinals(self) -> None:
@@ -633,7 +631,7 @@ class TestEdgeCases:
                             ("4", "th"), ("5", "th"), ("6", "th"),
                             ("7", "th"), ("8", "th"), ("9", "th")]:
             token: str = num + suffix
-            result: List[List[str]] = expand_ordinal(token)
+            result: list[list[str]] = expand_ordinal(token)
             assert len(result) > 0, f"Failed for {token}"
 
     def test_teen_ordinals(self) -> None:
@@ -654,8 +652,7 @@ class TestRateUnits:
 
     def test_rate_unit_expansion(self) -> None:
         """Rate units should expand correctly."""
-        expansions: Optional[List[List[str]]
-                             ] = get_number_expansions("100GB/s")
+        expansions: list[list[str]] | None = get_number_expansions("100GB/s")
         assert expansions is not None
         # Should have expansion with "per"
         has_per: bool = any("per" in exp for exp in expansions)
@@ -663,8 +660,7 @@ class TestRateUnits:
 
     def test_rate_unit_with_full_words(self) -> None:
         """Rate units should have expansions with full unit words."""
-        expansions: Optional[List[List[str]]
-                             ] = get_number_expansions("100GB/s")
+        expansions: list[list[str]] | None = get_number_expansions("100GB/s")
         assert expansions is not None
         # Should have one with "gigabytes per second" style
         has_full: bool = any(
@@ -681,7 +677,7 @@ class TestRateUnits:
         parsed: ParsedScript = parse_script(script, html)
 
         # Find the expansion word for "100GB/s"
-        expansion_words: List[SpeakableWord] = [
+        expansion_words: list[SpeakableWord] = [
             sw for sw in parsed.speakable_words if sw.is_expansion]
         assert len(expansion_words) == 1
 

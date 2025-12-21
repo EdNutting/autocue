@@ -2,14 +2,11 @@
 Tests for punctuation expansion in the script_parser module.
 """
 
-from typing import Dict, List
-
-import pytest
 from src.autocue.script_parser import (
     PUNCTUATION_EXPANSIONS,
-    should_expand_punctuation,
     get_all_expansions,
     get_expansion_first_words,
+    should_expand_punctuation,
 )
 
 
@@ -35,8 +32,8 @@ class TestPunctuationExpansionStructure:
     def test_slash_has_multiple_alternatives(self) -> None:
         """'/' should have multiple expansion alternatives: slash, or, forward slash."""
         assert "/" in PUNCTUATION_EXPANSIONS
-        expansions: List[List[str]] = PUNCTUATION_EXPANSIONS["/"]
-        first_words: List[str] = [exp[0] for exp in expansions]
+        expansions: list[list[str]] = PUNCTUATION_EXPANSIONS["/"]
+        first_words: list[str] = [exp[0] for exp in expansions]
         assert "slash" in first_words
         assert "or" in first_words
         assert "forward" in first_words
@@ -44,15 +41,15 @@ class TestPunctuationExpansionStructure:
     def test_ampersand_has_multiple_alternatives(self) -> None:
         """'&' should have multiple expansion alternatives: and, ampersand."""
         assert "&" in PUNCTUATION_EXPANSIONS
-        expansions: List[List[str]] = PUNCTUATION_EXPANSIONS["&"]
-        first_words: List[str] = [exp[0] for exp in expansions]
+        expansions: list[list[str]] = PUNCTUATION_EXPANSIONS["&"]
+        first_words: list[str] = [exp[0] for exp in expansions]
         assert "and" in first_words
         assert "ampersand" in first_words
 
     def test_primary_expansion_is_first(self) -> None:
         """The first expansion for each punctuation should be the primary (most common)."""
         # These are the expected primary expansions
-        expected_primary: Dict[str, List[str]] = {
+        expected_primary: dict[str, list[str]] = {
             "&": ["and"],
             "/": ["slash"],
             "+": ["plus"],
@@ -72,23 +69,23 @@ class TestGetAllExpansions:
 
     def test_returns_all_slash_expansions(self) -> None:
         """get_all_expansions('/') should return all alternatives."""
-        expansions: List[List[str]] | None = get_all_expansions("/")
+        expansions: list[list[str]] | None = get_all_expansions("/")
         assert expansions is not None
         assert len(expansions) >= 3  # slash, or, forward slash
 
         # Flatten to check content
-        all_first_words: List[str] = [exp[0] for exp in expansions]
+        all_first_words: list[str] = [exp[0] for exp in expansions]
         assert "slash" in all_first_words
         assert "or" in all_first_words
         assert "forward" in all_first_words
 
     def test_returns_all_ampersand_expansions(self) -> None:
         """get_all_expansions('&') should return all alternatives."""
-        expansions: List[List[str]] | None = get_all_expansions("&")
+        expansions: list[list[str]] | None = get_all_expansions("&")
         assert expansions is not None
         assert len(expansions) >= 2  # and, ampersand
 
-        all_first_words: List[str] = [exp[0] for exp in expansions]
+        all_first_words: list[str] = [exp[0] for exp in expansions]
         assert "and" in all_first_words
         assert "ampersand" in all_first_words
 
@@ -100,7 +97,7 @@ class TestGetAllExpansions:
 
     def test_handles_whitespace_around_punctuation(self) -> None:
         """get_all_expansions should handle whitespace around single punctuation."""
-        expansions: List[List[str]] | None = get_all_expansions(" / ")
+        expansions: list[list[str]] | None = get_all_expansions(" / ")
         # Note: This will only work for single-char punctuation after strip
         assert expansions is not None or get_all_expansions("/") is not None
 
@@ -110,7 +107,7 @@ class TestGetExpansionFirstWords:
 
     def test_returns_first_words_for_slash(self) -> None:
         """get_expansion_first_words('/') should return first word of each alternative."""
-        first_words: List[str] | None = get_expansion_first_words("/")
+        first_words: list[str] | None = get_expansion_first_words("/")
         assert first_words is not None
         assert "slash" in first_words
         assert "or" in first_words
@@ -118,7 +115,7 @@ class TestGetExpansionFirstWords:
 
     def test_returns_first_words_for_ampersand(self) -> None:
         """get_expansion_first_words('&') should return first word of each alternative."""
-        first_words: List[str] | None = get_expansion_first_words("&")
+        first_words: list[str] | None = get_expansion_first_words("&")
         assert first_words is not None
         assert "and" in first_words
         assert "ampersand" in first_words
@@ -133,7 +130,7 @@ class TestShouldExpandPunctuation:
 
     def test_returns_primary_expansion(self) -> None:
         """should_expand_punctuation returns the first (primary) expansion."""
-        expansion: List[str] | None = should_expand_punctuation("&")
+        expansion: list[str] | None = should_expand_punctuation("&")
         assert expansion == ["and"]  # Primary expansion
 
         expansion = should_expand_punctuation("/")
@@ -146,7 +143,7 @@ class TestShouldExpandPunctuation:
 
     def test_handles_multi_char_operators(self) -> None:
         """Multi-character operators like '<=' should be handled."""
-        expansion: List[str] | None = should_expand_punctuation("<=")
+        expansion: list[str] | None = should_expand_punctuation("<=")
         assert expansion == ["less", "than", "or", "equal"]
 
         expansion = should_expand_punctuation(">=")

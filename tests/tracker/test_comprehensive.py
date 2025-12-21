@@ -12,9 +12,7 @@ speech recognition scenarios including:
 - False-positive forward jump prevention
 """
 
-from typing import List, Optional, Tuple
-from src.autocue.tracker import ScriptTracker, ScriptPosition
-
+from src.autocue.tracker import ScriptPosition, ScriptTracker
 
 # Sample script content (from sample_script.md)
 SAMPLE_SCRIPT = """# Welcome to Autocue
@@ -96,7 +94,7 @@ class TestNormalTalking:
 
         # Start from the actual first words (including header)
         # Script word order: welcome(0), to(1), autocue(2), hello(3), and(4), welcome(5)...
-        words: List[str] = ["welcome", "to", "autocue", "hello", "and", "welcome",
+        words: list[str] = ["welcome", "to", "autocue", "hello", "and", "welcome",
                             "to", "this", "demonstration", "of"]
 
         transcript: str = ""
@@ -177,7 +175,7 @@ class TestNormalTalking:
             "software handles everything for you key features let me tell you about some "
             "of the key features"
         )
-        pos: ScriptPosition = tracker.update(intro)
+        tracker.update(intro)
         pos_before_features: int = tracker.optimistic_position
 
         # Speak through the feature bullets
@@ -186,7 +184,7 @@ class TestNormalTalking:
             "backtrack detection so if you make a mistake and restart a sentence it "
             "rewinds with you"
         )
-        pos = tracker.update(features)
+        tracker.update(features)
 
         assert tracker.optimistic_position > pos_before_features
 
@@ -196,7 +194,7 @@ class TestNormalTalking:
 
         # Use the actual parsed words from the tracker
         # First 50 normalized words
-        script_words: List[str] = tracker.words[:50]
+        script_words: list[str] = tracker.words[:50]
 
         transcript: str = ""
         for expected_pos, word in enumerate(script_words, 1):
@@ -205,7 +203,8 @@ class TestNormalTalking:
 
             # Position should be within 3 words of expected
             assert abs(pos.word_index - expected_pos) <= 3, \
-                f"Position {pos.word_index} too far from expected {expected_pos} after word '{word}'"
+                (f"Position {pos.word_index} too far from expected"
+                 f" {expected_pos} after word '{word}'")
 
 
 class TestMinorSpeechFaults:
@@ -311,7 +310,7 @@ class TestMinorSpeechFaults:
         tracker: ScriptTracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Speak with various minor faults using correct starting words
-        speech_segments: List[str] = [
+        speech_segments: list[str] = [
             "welcome to autocue",  # Clean
             "welcome to autocue hello um and",  # Filler
             "welcome to autocue hello um and welcome to",  # Continue
@@ -319,7 +318,7 @@ class TestMinorSpeechFaults:
             "welcome to autocue hello um and welcome to this this demonstration",
         ]
 
-        pos: Optional[ScriptPosition] = None
+        pos: ScriptPosition | None = None
         for speech in speech_segments:
             pos = tracker.update(speech)
 
@@ -372,9 +371,8 @@ class TestBacktracking:
         # Now restart from the beginning
         tracker.last_transcription = ""
         tracker.needs_validation = True
-        validated_pos: int
         is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.validate_position(
             "welcome to autocue hello and welcome"
         )
 
@@ -401,9 +399,8 @@ class TestBacktracking:
         # Backtrack to the intro
         tracker.last_transcription = ""
         tracker.needs_validation = True
-        validated_pos: int
         is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.validate_position(
             "welcome to autocue hello and welcome to this demonstration"
         )
 
@@ -501,9 +498,8 @@ class TestBacktracking:
 
         # Going back 10+ words should trigger backtrack
         tracker.needs_validation = True
-        validated_pos: int
         is_backtrack_large: bool
-        validated_pos, is_backtrack_large = tracker.validate_position(
+        _validated_pos, is_backtrack_large = tracker.validate_position(
             "welcome to autocue hello and welcome"
         )
         assert is_backtrack_large, "Large backtrack should be detected"
@@ -667,9 +663,8 @@ Later on, the system handles more tasks. The system never fails."""
 
         # Force validation
         tracker.needs_validation = True
-        validated_pos: int
         is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.validate_position(
             "welcome to autocue hello and")
 
         # Should NOT backtrack for small deviation
@@ -690,9 +685,8 @@ Later on, the system handles more tasks. The system never fails."""
 
         # Validate with current transcript - should NOT backtrack
         tracker.needs_validation = True
-        validated_pos: int
         is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.validate_position(
             "walk you through how this teleprompter works and why it might be useful"
         )
 
@@ -730,9 +724,7 @@ Later section. The quick brown fox jumps one more time. End."""
         # Now backtrack to "the quick brown fox" - should go to nearest one
         tracker.last_transcription = ""
         tracker.needs_validation = True
-        validated_pos: int
-        is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position(
+        tracker.validate_position(
             "the quick brown fox jumps one more time"
         )
 
@@ -763,9 +755,8 @@ Later section. The quick brown fox jumps one more time. End."""
 
         # Try to validate with text from way back at beginning
         tracker.needs_validation = True
-        validated_pos: int
         is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.validate_position(
             "welcome to autocue hello and welcome"
         )
 
@@ -789,15 +780,11 @@ Third: always speak clearly and naturally. The end."""
             "first speak clearly and naturally second remember to speak clearly "
             "and naturally third always"
         )
-        pos_at_third: int = tracker.optimistic_position
 
         # Backtrack to "speak clearly and naturally"
         tracker.last_transcription = ""
         tracker.needs_validation = True
-        validated_pos: int
-        is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position(
-            "speak clearly and naturally")
+        tracker.validate_position("speak clearly and naturally")
 
         # Should prefer the nearest match (the third occurrence)
         # Position shouldn't jump all the way back to the first occurrence
@@ -854,7 +841,7 @@ Finally, master the basics. You have completed training."""
         tracker: ScriptTracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Build up strong optimistic position with correct words
-        words: List[str] = ["welcome", "to", "autocue", "hello", "and", "welcome",
+        words: list[str] = ["welcome", "to", "autocue", "hello", "and", "welcome",
                             "to", "this", "demonstration", "of"]
         transcript: str = ""
         for word in words:
@@ -865,9 +852,8 @@ Finally, master the basics. You have completed training."""
 
         # Validation shouldn't jump forward
         tracker.needs_validation = True
-        validated_pos: int
         is_jump: bool
-        validated_pos, is_jump = tracker.validate_position(transcript)
+        _validated_pos, is_jump = tracker.validate_position(transcript)
 
         assert is_jump is False, "Should not detect false forward jump"
         assert abs(tracker.optimistic_position - optimistic) <= 3
@@ -878,7 +864,6 @@ Finally, master the basics. You have completed training."""
 
         # Speak beginning
         tracker.update("welcome to autocue hello")
-        pos1: int = tracker.optimistic_position
 
         # Continue normally
         tracker.update("welcome to autocue hello and welcome to this")
@@ -949,7 +934,7 @@ class TestEdgeCasesWithSampleScript:
         tracker: ScriptTracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Simulate a long continuous transcription with correct words
-        words: List[str] = ["welcome", "to", "autocue", "hello", "and", "welcome",
+        words: list[str] = ["welcome", "to", "autocue", "hello", "and", "welcome",
                             "to", "this", "demonstration", "of"]
         long_transcript: str = " ".join(words * 3)
         pos: ScriptPosition = tracker.update(long_transcript)

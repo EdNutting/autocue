@@ -6,9 +6,9 @@ Provides partial results as speech is happening, not just final results.
 import json
 import os
 from pathlib import Path
-from typing import Optional, Dict, Any
-from vosk import Model, KaldiRecognizer, SetLogLevel
+from typing import Any
 
+from vosk import KaldiRecognizer, Model, SetLogLevel
 
 # Suppress Vosk's verbose logging
 SetLogLevel(-1)
@@ -42,7 +42,7 @@ class Transcriber:
     """
 
     # Model download URLs and names
-    MODELS: Dict[str, str] = {
+    MODELS: dict[str, str] = {
         "small": "vosk-model-small-en-us-0.15",  # ~40MB, fastest
         "medium": "vosk-model-en-us-0.22",        # ~1.8GB, better accuracy
         "large": "vosk-model-en-us-0.42-gigaspeech",  # ~2.3GB, best accuracy
@@ -55,7 +55,7 @@ class Transcriber:
 
     def __init__(
         self,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         model_name: str = "small",
         sample_rate: int = 16000
     ) -> None:
@@ -89,7 +89,7 @@ class Transcriber:
         model_dir_name: str = self.MODELS.get(model_name, model_name)
         return str(cache_dir / model_dir_name)
 
-    def process_audio(self, audio_data: bytes) -> Optional[TranscriptionResult]:
+    def process_audio(self, audio_data: bytes) -> TranscriptionResult | None:
         """
         Process an audio chunk and return transcription result.
 
@@ -101,13 +101,13 @@ class Transcriber:
         """
         if self.recognizer.AcceptWaveform(audio_data):
             # Final result - speech segment complete
-            result: Dict[str, Any] = json.loads(self.recognizer.Result())
+            result: dict[str, Any] = json.loads(self.recognizer.Result())
             text: str = result.get("text", "").strip()
             if text:
                 return TranscriptionResult(text, is_partial=False)
         else:
             # Partial result - speech still in progress
-            result: Dict[str, Any] = json.loads(
+            result: dict[str, Any] = json.loads(
                 self.recognizer.PartialResult())
             text: str = result.get("partial", "").strip()
             if text:
@@ -120,16 +120,16 @@ class Transcriber:
         self.recognizer = KaldiRecognizer(self.model, self.sample_rate)
         self.recognizer.SetWords(True)
 
-    def get_final(self) -> Optional[TranscriptionResult]:
+    def get_final(self) -> TranscriptionResult | None:
         """Get any remaining buffered speech as final result."""
-        result: Dict[str, Any] = json.loads(self.recognizer.FinalResult())
+        result: dict[str, Any] = json.loads(self.recognizer.FinalResult())
         text: str = result.get("text", "").strip()
         if text:
             return TranscriptionResult(text, is_partial=False)
         return None
 
 
-def download_model(model_name: str = "small", target_dir: Optional[str] = None) -> str:
+def download_model(model_name: str = "small", target_dir: str | None = None) -> str:
     """
     Download a Vosk model.
 
@@ -140,11 +140,11 @@ def download_model(model_name: str = "small", target_dir: Optional[str] = None) 
     Returns:
         Path to the downloaded model as a string.
     """
-    import urllib.request
-    import zipfile
-    import tempfile
+    import tempfile  # pylint: disable=import-outside-toplevel
+    import urllib.request  # pylint: disable=import-outside-toplevel
+    import zipfile  # pylint: disable=import-outside-toplevel
 
-    model_dir_name: Optional[str] = Transcriber.MODELS.get(model_name)
+    model_dir_name: str | None = Transcriber.MODELS.get(model_name)
     if not model_dir_name:
         raise ValueError(
             f"Unknown model: {model_name}. Choose from: {list(Transcriber.MODELS.keys())}")

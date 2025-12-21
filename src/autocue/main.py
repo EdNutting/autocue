@@ -5,11 +5,11 @@ Orchestrates audio capture, transcription, script tracking, and the web UI.
 
 import argparse
 import asyncio
+import contextlib
 import logging
 import signal
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from . import debug_log
 from .audio import AudioCapture, list_devices
@@ -42,21 +42,21 @@ class AutocueApp:
 
     def __init__(
         self,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         model_name: str = "small",
         host: str = "127.0.0.1",
         port: int = 8000,
-        audio_device: Optional[int] = None,
+        audio_device: int | None = None,
         chunk_ms: int = 100,
-        display_settings: Optional[DisplaySettings] = None,
-        tracking_settings: Optional[TrackingSettings] = None,
+        display_settings: DisplaySettings | None = None,
+        tracking_settings: TrackingSettings | None = None,
         save_transcript: bool = False
     ) -> None:
-        self.model_path: Optional[str] = model_path
+        self.model_path: str | None = model_path
         self.model_name: str = model_name
         self.host: str = host
         self.port: int = port
-        self.audio_device: Optional[int] = audio_device
+        self.audio_device: int | None = audio_device
         self.chunk_ms: int = chunk_ms
         # type: ignore[assignment]
         self.display_settings: DisplaySettings = (
@@ -68,20 +68,20 @@ class AutocueApp:
         )
         self.save_transcript: bool = save_transcript
 
-        self.audio: Optional[AudioCapture] = None
-        self.transcriber: Optional[Transcriber] = None
-        self.tracker: Optional[ScriptTracker] = None
-        self.server: Optional[WebServer] = None
-        self.transcript_file: Optional[Path] = None
+        self.audio: AudioCapture | None = None
+        self.transcriber: Transcriber | None = None
+        self.tracker: ScriptTracker | None = None
+        self.server: WebServer | None = None
+        self.transcript_file: Path | None = None
 
         self.running: bool = False
 
         # Track last sent position to avoid duplicate updates
-        self._last_sent_word_index: Optional[int] = None
-        self._last_sent_line_index: Optional[int] = None
-        self._last_sent_word_offset: Optional[int] = None
+        self._last_sent_word_index: int | None = None
+        self._last_sent_line_index: int | None = None
+        self._last_sent_word_offset: int | None = None
 
-    def _write_transcript(self, text: str, is_partial: bool) -> None:
+    def write_transcript(self, text: str, is_partial: bool) -> None:
         """Write recognized text to the transcript file."""
         if not self.save_transcript or not self.transcript_file:
             return
@@ -90,7 +90,7 @@ class AutocueApp:
             with open(self.transcript_file, 'a', encoding='utf-8') as f:
                 f.write(f"{text}\n")
 
-    async def _start_transcript(self) -> None:
+    async def start_transcript(self) -> None:
         """Start transcript recording."""
         assert self.server is not None, "Server must be initialized"
         if self.save_transcript and self.transcript_file:
@@ -108,7 +108,7 @@ class AutocueApp:
         print(f"Transcript recording started: {self.transcript_file}")
         await self.server.send_transcript_status(True, str(self.transcript_file))
 
-    async def _stop_transcript(self) -> None:
+    async def stop_transcript(self) -> None:
         """Stop transcript recording."""
         assert self.server is not None, "Server must be initialized"
         if not self.save_transcript:
@@ -194,7 +194,7 @@ class AutocueApp:
                 if self.server.start_transcript_on_script or self.save_transcript:
                     self.server.start_transcript_on_script = False  # Reset flag
                     if not self.transcript_file:  # Don't restart if already recording
-                        await self._start_transcript()
+                        await self.start_transcript()
 
             # Check for reset request
             if self.server.reset_requested:
@@ -224,12 +224,12 @@ class AutocueApp:
                 enable: bool = self.server.transcript_toggle_requested
                 self.server.transcript_toggle_requested = None
                 if enable:
-                    await self._start_transcript()
+                    await self.start_transcript()
                 else:
-                    await self._stop_transcript()
+                    await self.stop_transcript()
 
             # Process audio
-            audio_chunk: Optional[bytes] = self.audio.get_chunk(timeout=0.05)
+            audio_chunk: bytes | None = self.audio.get_chunk(timeout=0.05)
             if audio_chunk and self.tracker:
                 # Run blocking Vosk transcription in thread pool to keep event loop responsive
                 loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
@@ -239,7 +239,7 @@ class AutocueApp:
 
                 if result and result.text:
                     # Save transcript if enabled
-                    self._write_transcript(result.text, result.is_partial)
+                    self.write_transcript(result.text, result.is_partial)
 
                     position = self.tracker.update(
                         result.text,
@@ -261,8 +261,11 @@ class AutocueApp:
 
                     if position_changed or position.is_backtrack:
                         # Log what we're sending to the client
-                        word_at_pos: str = self.tracker.words[position.word_index] if position.word_index < len(
-                            self.tracker.words) else "END"
+                        word_at_pos: str = (
+                            self.tracker.words[position.word_index]
+                            if position.word_index < len(self.tracker.words)
+                            else "END"
+                        )
                         debug_log.log_server_word(
                             position.word_index, word_at_pos,
                             f"SEND line={position.line_index} offset={word_offset}"
@@ -452,10 +455,8 @@ def main() -> None:
         app.running = False
     finally:
         # Ensure clean shutdown
-        try:
+        with contextlib.suppress(Exception):
             loop.run_until_complete(app.stop())
-        except Exception:
-            pass
         # Cancel any remaining tasks
         pending: set[asyncio.Task[object]] = asyncio.all_tasks(loop)
         for task in pending:

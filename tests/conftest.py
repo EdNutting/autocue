@@ -4,7 +4,6 @@ Shared fixtures and configuration for all tests.
 
 import pytest
 
-
 # Sample script content commonly used in tracker tests
 SAMPLE_SCRIPT = """# Welcome to Autocue
 

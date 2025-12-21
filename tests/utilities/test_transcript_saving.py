@@ -2,13 +2,13 @@
 
 import asyncio
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 from unittest import mock
 
 import pytest
 
-from autocue.main import AutocueApp, TRANSCRIPT_DIR
+from autocue.main import AutocueApp
 
 
 class TestTranscriptSaving:
@@ -31,13 +31,13 @@ class TestTranscriptSaving:
         """_write_transcript() should do nothing when saving is disabled."""
         app: AutocueApp = AutocueApp(save_transcript=False)
         # Should not raise even without transcript file
-        app._write_transcript("test text", is_partial=False)
+        app.write_transcript("test text", is_partial=False)
 
     def test_write_transcript_no_op_without_file(self) -> None:
         """_write_transcript() should do nothing without transcript file."""
         app: AutocueApp = AutocueApp(save_transcript=True)
         # File not initialized
-        app._write_transcript("test text", is_partial=False)
+        app.write_transcript("test text", is_partial=False)
         # Should not raise
 
 
@@ -60,7 +60,7 @@ class TestDynamicTranscriptControl:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path: Path = Path(tmpdir)
             with mock.patch('autocue.main.TRANSCRIPT_DIR', tmpdir_path):
-                await app._start_transcript()
+                await app.start_transcript()
 
                 assert app.save_transcript is True
                 assert app.transcript_file is not None
@@ -70,7 +70,10 @@ class TestDynamicTranscriptControl:
                 assert call_args[0][0] is True  # recording=True
 
     @pytest.mark.asyncio
-    async def test_start_transcript_no_op_if_already_recording(self, mock_server: mock.AsyncMock) -> None:
+    async def test_start_transcript_no_op_if_already_recording(
+        self,
+        mock_server: mock.AsyncMock
+    ) -> None:
         """_start_transcript() should be a no-op if already recording."""
         app: AutocueApp = AutocueApp(save_transcript=True)
         app.server = mock_server
@@ -79,14 +82,14 @@ class TestDynamicTranscriptControl:
             tmpdir_path: Path = Path(tmpdir)
             with mock.patch('autocue.main.TRANSCRIPT_DIR', tmpdir_path):
                 # Start first time
-                await app._start_transcript()
+                await app.start_transcript()
                 first_file: Path | None = app.transcript_file
 
                 # Reset mock
                 mock_server.send_transcript_status.reset_mock()
 
                 # Start again - should use same file
-                await app._start_transcript()
+                await app.start_transcript()
                 assert app.transcript_file == first_file
                 # Should still send status update
                 mock_server.send_transcript_status.assert_called_once()
@@ -101,11 +104,11 @@ class TestDynamicTranscriptControl:
             tmpdir_path: Path = Path(tmpdir)
             with mock.patch('autocue.main.TRANSCRIPT_DIR', tmpdir_path):
                 # Start recording
-                await app._start_transcript()
+                await app.start_transcript()
                 transcript_file: Path | None = app.transcript_file
 
                 # Stop recording
-                await app._stop_transcript()
+                await app.stop_transcript()
 
                 assert app.save_transcript is False
                 assert app.transcript_file is None
@@ -120,12 +123,15 @@ class TestDynamicTranscriptControl:
                 assert call_args[0][0] is False  # recording=False
 
     @pytest.mark.asyncio
-    async def test_stop_transcript_no_op_if_not_recording(self, mock_server: mock.AsyncMock) -> None:
+    async def test_stop_transcript_no_op_if_not_recording(
+        self,
+        mock_server: mock.AsyncMock
+    ) -> None:
         """_stop_transcript() should be a no-op if not recording."""
         app: AutocueApp = AutocueApp(save_transcript=False)
         app.server = mock_server
 
-        await app._stop_transcript()
+        await app.stop_transcript()
 
         assert app.save_transcript is False
         assert app.transcript_file is None
@@ -141,19 +147,19 @@ class TestDynamicTranscriptControl:
             tmpdir_path: Path = Path(tmpdir)
             with mock.patch('autocue.main.TRANSCRIPT_DIR', tmpdir_path):
                 # First cycle
-                await app._start_transcript()
+                await app.start_transcript()
                 first_file: Path | None = app.transcript_file
-                app._write_transcript("first recording", is_partial=False)
-                await app._stop_transcript()
+                app.write_transcript("first recording", is_partial=False)
+                await app.stop_transcript()
 
                 # Wait a moment to ensure different timestamp
                 await asyncio.sleep(1.1)
 
                 # Second cycle
-                await app._start_transcript()
+                await app.start_transcript()
                 second_file: Path | None = app.transcript_file
-                app._write_transcript("second recording", is_partial=False)
-                await app._stop_transcript()
+                app.write_transcript("second recording", is_partial=False)
+                await app.stop_transcript()
 
                 # Files should be different (different timestamps)
                 assert first_file is not None, "First file should have been created"

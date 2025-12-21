@@ -4,8 +4,6 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-import pytest
-
 from autocue import debug_log
 
 

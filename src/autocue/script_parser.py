@@ -10,11 +10,9 @@ punctuation is spoken aloud (e.g., "&" as "and", "<" as "less than").
 
 import re
 from dataclasses import dataclass
-from typing import List, Dict, Optional, FrozenSet
 from html.parser import HTMLParser
 
-from .number_expander import is_number_token, get_number_expansions
-
+from .number_expander import get_number_expansions, is_number_token
 
 # Punctuation that gets spoken as words
 # Maps punctuation strings to a list of possible spoken forms
@@ -22,7 +20,7 @@ from .number_expander import is_number_token, get_number_expansions
 # The FIRST entry is the "primary" expansion used for position tracking
 # Note: Characters like # * _ are excluded because they're typically
 # used for Markdown formatting and don't appear in rendered output
-PUNCTUATION_EXPANSIONS: Dict[str, List[List[str]]] = {
+PUNCTUATION_EXPANSIONS: dict[str, list[list[str]]] = {
     "&": [["and"], ["ampersand"]],
     "<": [["less", "than"]],
     ">": [["greater", "than"]],
@@ -46,7 +44,7 @@ PUNCTUATION_EXPANSIONS: Dict[str, List[List[str]]] = {
 
 # Punctuation that should be silently dropped (not spoken)
 # These are punctuation marks that don't get vocalized
-SILENT_PUNCTUATION: FrozenSet[str] = frozenset([
+SILENT_PUNCTUATION: frozenset[str] = frozenset([
     ',', '.', '!', '?', ';', ':', '"', "'", '(', ')', '[', ']', '{', '}',
     '—', '–', '…', '"', '"', ''', ''', '«', '»',
 ])
@@ -75,7 +73,7 @@ class SpeakableWord:
     # True if this is an expandable token (number/punctuation)
     is_expansion: bool = False
     # For expandable tokens, store all possible expansions for dynamic matching
-    all_expansions: Optional[List[List[str]]] = None
+    all_expansions: list[list[str]] | None = None
 
     def __repr__(self) -> str:
         if self.is_expansion and self.all_expansions:
@@ -88,12 +86,12 @@ class SpeakableWord:
 class ParsedScript:
     """Complete parsed representation of a script."""
     raw_text: str  # Original script text
-    raw_tokens: List[RawToken]  # Tokens as they appear in rendered HTML
-    speakable_words: List[SpeakableWord]  # Words as spoken (for matching)
+    raw_tokens: list[RawToken]  # Tokens as they appear in rendered HTML
+    speakable_words: list[SpeakableWord]  # Words as spoken (for matching)
     # Map raw_token_index -> speakable_word indices
-    raw_to_speakable: Dict[int, List[int]]
+    raw_to_speakable: dict[int, list[int]]
     # Map speakable_word_index -> raw_token_index
-    speakable_to_raw: Dict[int, int]
+    speakable_to_raw: dict[int, int]
 
     @property
     def total_raw_tokens(self) -> int:
@@ -105,7 +103,7 @@ class ParsedScript:
         """Return the total number of speakable words in the script."""
         return len(self.speakable_words)
 
-    def get_raw_token(self, speakable_index: int) -> Optional[RawToken]:
+    def get_raw_token(self, speakable_index: int) -> RawToken | None:
         """Get the raw token that produced a given speakable word."""
         if speakable_index < 0 or speakable_index >= len(self.speakable_words):
             return None
@@ -145,7 +143,7 @@ def strip_surrounding_punctuation(token: str) -> str:
     return token
 
 
-def should_expand_punctuation(token: str) -> Optional[List[str]]:
+def should_expand_punctuation(token: str) -> list[str] | None:
     """Check if a token should be expanded to spoken words.
 
     Returns the PRIMARY expansion (first in the list) or None if no expansion needed.
@@ -165,7 +163,7 @@ def should_expand_punctuation(token: str) -> Optional[List[str]]:
     return None
 
 
-def get_all_expansions(token: str) -> Optional[List[List[str]]]:
+def get_all_expansions(token: str) -> list[list[str]] | None:
     """Get all possible spoken expansions for a punctuation or number token.
 
     Returns a list of all possible expansions (each is a list of words),
@@ -190,7 +188,7 @@ def get_all_expansions(token: str) -> Optional[List[List[str]]]:
     return None
 
 
-def get_expansion_first_words(token: str) -> Optional[List[str]]:
+def get_expansion_first_words(token: str) -> list[str] | None:
     """Get the first word of each possible expansion for a punctuation token.
 
     This is useful for matching - if a spoken word matches any of these,
@@ -216,18 +214,18 @@ class HTMLTextExtractor(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__()
-        self.tokens: List[str] = []
+        self.tokens: list[str] = []
 
     def handle_data(self, data: str) -> None:
         """Extract words from text content."""
         # Split on whitespace to get individual words
-        words: List[str] = data.split()
+        words: list[str] = data.split()
         for word in words:
             if word.strip():
                 self.tokens.append(word)
 
 
-def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript:
+def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
     """Parse script into raw tokens and speakable words.
 
     If rendered_html is provided, tokens are extracted from the HTML content
@@ -241,13 +239,13 @@ def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript
     Returns:
         ParsedScript with all representations and mappings
     """
-    raw_tokens: List[RawToken] = []
-    speakable_words: List[SpeakableWord] = []
-    raw_to_speakable: Dict[int, List[int]] = {}
-    speakable_to_raw: Dict[int, int] = {}
+    raw_tokens: list[RawToken] = []
+    speakable_words: list[SpeakableWord] = []
+    raw_to_speakable: dict[int, list[int]] = {}
+    speakable_to_raw: dict[int, int] = {}
 
     # Extract tokens from HTML if provided, otherwise from raw text
-    tokens: List[str]
+    tokens: list[str]
     if rendered_html:
         extractor: HTMLTextExtractor = HTMLTextExtractor()
         extractor.feed(rendered_html)
@@ -274,7 +272,7 @@ def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript
         raw_to_speakable[raw_index] = []
 
         # Check for punctuation expansion
-        expansion: Optional[List[str]] = should_expand_punctuation(token)
+        expansion: list[str] | None = should_expand_punctuation(token)
 
         # Strip surrounding punctuation for number detection
         # e.g., "1100," -> "1100", '"100"' -> "100"
@@ -283,7 +281,7 @@ def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript
         if expansion:
             # Punctuation token - create ONE speakable word with all expansions
             # Get all possible expansions for dynamic matching
-            all_exps: Optional[List[List[str]]] = get_all_expansions(token)
+            all_exps: list[list[str]] | None = get_all_expansions(token)
             sw: SpeakableWord = SpeakableWord(
                 text=expansion[0].lower(),  # Primary first word for display
                 raw_token_index=raw_index,
@@ -297,8 +295,8 @@ def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript
         elif is_number_token(stripped_token):
             # Number token - create ONE speakable word with all expansions
             # The tracker handles matching variable-length expansions dynamically
-            number_expansions: Optional[List[List[str]]
-                                        ] = get_number_expansions(stripped_token)
+            number_expansions: list[list[str]] | None = get_number_expansions(
+                stripped_token)
             if number_expansions:
                 sw: SpeakableWord = SpeakableWord(
                     text=number_expansions[0][0].lower(),  # Primary first word
@@ -352,7 +350,7 @@ def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript
     )
 
 
-def get_speakable_word_list(parsed: ParsedScript) -> List[str]:
+def get_speakable_word_list(parsed: ParsedScript) -> list[str]:
     """Get list of speakable words (for tracker matching)."""
     return [sw.text for sw in parsed.speakable_words]
 

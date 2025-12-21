@@ -2,8 +2,7 @@
 Tests for filler word handling in ScriptTracker.
 """
 
-import pytest
-from src.autocue.tracker import ScriptTracker, ScriptPosition
+from src.autocue.tracker import ScriptPosition, ScriptTracker
 
 
 class TestFillerWordHandling:

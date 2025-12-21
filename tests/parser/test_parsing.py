@@ -2,18 +2,15 @@
 Tests for core parsing functions in the script_parser module.
 """
 
-from typing import List
-
-import pytest
 import markdown
+
 from src.autocue.script_parser import (
-    SILENT_PUNCTUATION,
     ParsedScript,
     SpeakableWord,
-    normalize_word,
-    is_silent_punctuation,
-    parse_script,
     get_speakable_word_list,
+    is_silent_punctuation,
+    normalize_word,
+    parse_script,
     speakable_to_raw_index,
 )
 
@@ -83,7 +80,7 @@ class TestParseScript:
             script, extensions=['nl2br', 'sane_lists'])
         parsed: ParsedScript = parse_script(script, html)
 
-        words: List[str] = [sw.text for sw in parsed.speakable_words]
+        words: list[str] = [sw.text for sw in parsed.speakable_words]
         assert "and" in words
 
     def test_bidirectional_mapping(self) -> None:
@@ -103,7 +100,7 @@ class TestParseScript:
         parsed: ParsedScript = parse_script(script, html)
 
         # Find the speakable words from the "<" expansion
-        expanded_words: List[SpeakableWord] = [
+        expanded_words: list[SpeakableWord] = [
             sw for sw in parsed.speakable_words if sw.is_expansion]
         # Now we create ONE position per expandable token
         assert len(expanded_words) == 1
@@ -152,7 +149,7 @@ class TestGetSpeakableWordList:
         script: str = "Hello world"
         parsed: ParsedScript = parse_script(script)
 
-        words: List[str] = get_speakable_word_list(parsed)
+        words: list[str] = get_speakable_word_list(parsed)
         assert isinstance(words, list)
         assert all(isinstance(w, str) for w in words)
         assert words == ["hello", "world"]

@@ -2,10 +2,7 @@
 Tests for basic word matching functionality in ScriptTracker.
 """
 
-from typing import List
-
-import pytest
-from src.autocue.tracker import ScriptTracker, ScriptPosition
+from src.autocue.tracker import ScriptPosition, ScriptTracker
 
 
 class TestOptimisticWordMatching:
@@ -116,7 +113,7 @@ class TestEdgeCases:
     def test_empty_script(self) -> None:
         """Should handle empty script gracefully."""
         tracker: ScriptTracker = ScriptTracker("")
-        words: List[str] = tracker.words
+        words: list[str] = tracker.words
         assert words == []
         assert tracker.progress == 0.0
 

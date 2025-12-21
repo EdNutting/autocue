@@ -2,10 +2,7 @@
 Tests for ScriptTracker API methods (reset, jump, extract, display).
 """
 
-from typing import List, Tuple
-
-import pytest
-from src.autocue.tracker import ScriptTracker, ScriptLine
+from src.autocue.tracker import ScriptLine, ScriptTracker
 
 
 class TestResetAndJump:
@@ -56,7 +53,7 @@ class TestExtractNewWords:
         tracker: ScriptTracker = ScriptTracker("the quick brown fox")
 
         tracker.update("the quick")
-        new_words: List[str] = tracker._extract_new_words("the quick brown")
+        new_words: list[str] = tracker.extract_new_words("the quick brown")
 
         assert new_words == ["brown"]
 
@@ -65,7 +62,7 @@ class TestExtractNewWords:
         tracker: ScriptTracker = ScriptTracker("the quick brown fox")
 
         # First transcription
-        new_words: List[str] = tracker._extract_new_words("hello world")
+        new_words: list[str] = tracker.extract_new_words("hello world")
         assert len(new_words) > 0
 
     def test_extract_new_words_no_match(self) -> None:
@@ -73,7 +70,7 @@ class TestExtractNewWords:
         tracker: ScriptTracker = ScriptTracker("the quick brown fox")
         tracker.last_transcription = "completely different"
 
-        new_words: List[str] = tracker._extract_new_words(
+        new_words: list[str] = tracker.extract_new_words(
             "hello world testing")
         # Should return last 3 words when no prefix match
         assert len(new_words) <= 3
@@ -90,10 +87,9 @@ class TestDisplayMethods:
         # Move to line 2
         tracker.update("line one line two")
 
-        lines: List[ScriptLine]
+        lines: list[ScriptLine]
         current_idx: int
-        word_offset: int
-        lines, current_idx, word_offset = tracker.get_display_lines(
+        lines, current_idx, _word_offset = tracker.get_display_lines(
             past_lines=1, future_lines=2)
 
         assert len(lines) > 0

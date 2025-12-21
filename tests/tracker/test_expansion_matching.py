@@ -2,8 +2,7 @@
 Tests for expansion matching (punctuation and number alternatives) in ScriptTracker.
 """
 
-import pytest
-from src.autocue.tracker import ScriptTracker, ScriptPosition
+from src.autocue.tracker import ScriptPosition, ScriptTracker
 
 
 class TestAlternativePunctuationMatching:
@@ -424,7 +423,6 @@ class TestExpansionValidationBug:
         # Advance to "and"
         tracker.update("some text and")
         pos_after_and: int = tracker.optimistic_position
-        high_water_after_and: int = tracker.high_water_mark
 
         # Now simulate word-by-word expansion matching
         # Each update represents a partial transcription update
@@ -435,9 +433,8 @@ class TestExpansionValidationBug:
 
         # Check if validation triggered
         if tracker.needs_validation:
-            validated_pos: int
             was_backtrack: bool
-            validated_pos, was_backtrack = tracker.validate_position(
+            _validated_pos, was_backtrack = tracker.validate_position(
                 "some text and one")
             assert was_backtrack is False, "Validation during expansion should not cause backtrack"
 
@@ -446,7 +443,7 @@ class TestExpansionValidationBug:
         assert result.is_backtrack is False, "Second word of expansion should not cause backtrack"
 
         if tracker.needs_validation:
-            validated_pos, was_backtrack = tracker.validate_position(
+            _validated_pos, was_backtrack = tracker.validate_position(
                 "some text and one thousand")
             assert was_backtrack is False, "Validation during expansion should not cause backtrack"
 
@@ -455,7 +452,7 @@ class TestExpansionValidationBug:
         assert result.is_backtrack is False, "Third word of expansion should not cause backtrack"
 
         if tracker.needs_validation:
-            validated_pos, was_backtrack = tracker.validate_position(
+            _validated_pos, was_backtrack = tracker.validate_position(
                 "some text and one thousand five"
             )
             assert was_backtrack is False, "Validation during expansion should not cause backtrack"
@@ -576,7 +573,7 @@ class TestExpansionStateClearingOnPositionChange:
         tracker.current_word_index = new_position
         tracker.high_water_mark = new_position
         tracker.skip_disabled_count = 5
-        tracker._clear_expansion_state()  # This is the fix we added
+        tracker.clear_expansion_state()  # This is the fix we added
 
         # Verify expansion state is now cleared
         assert expansion_was_active, "Test setup: expansion should have been active"
@@ -633,7 +630,7 @@ class TestExpansionStateClearingOnPositionChange:
         tracker.optimistic_position = 4  # Position of "as"
         tracker.current_word_index = 4
         tracker.high_water_mark = 4
-        tracker._clear_expansion_state()  # This is what the fix does
+        tracker.clear_expansion_state()  # This is what the fix does
 
         # Now subsequent words should match the new position, not cause cascading failures
         tracker.last_transcription = ""

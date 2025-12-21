@@ -34,3 +34,10 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.pylint.messages_control]
+disable = [
+    "W0613",  # unused-argument
+    "W0718",  # broad-exception-caught
+    "C0302",  # too-many-lines
+]

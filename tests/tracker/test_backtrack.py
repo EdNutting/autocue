@@ -2,9 +2,6 @@
 Tests for backtrack handling and repeated word scenarios in ScriptTracker.
 """
 
-from typing import List, Tuple
-
-import pytest
 from src.autocue.tracker import ScriptTracker
 
 
@@ -16,7 +13,7 @@ class TestRepeatedWords:
         tracker: ScriptTracker = ScriptTracker("the quick brown the lazy dog")
 
         # Advance through first "the quick brown"
-        text_sequence: List[str] = ["the", "the quick", "the quick brown"]
+        text_sequence: list[str] = ["the", "the quick", "the quick brown"]
         for text in text_sequence:
             tracker.update(text)
 
@@ -32,7 +29,7 @@ class TestRepeatedWords:
         tracker: ScriptTracker = ScriptTracker("the quick brown the lazy dog")
 
         # Advance to position 4 (after second "the")
-        text_sequence: List[str] = ["the", "the quick",
+        text_sequence: list[str] = ["the", "the quick",
                                     "the quick brown", "the quick brown the"]
         for text in text_sequence:
             tracker.update(text)
@@ -42,9 +39,9 @@ class TestRepeatedWords:
         # Validation with "the lazy" - matches position 3-4
         # Should trust optimistic since deviation is small
         tracker.needs_validation = True
-        validated_pos: int
         is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position("the lazy dog")
+        _validated_pos, is_backtrack = tracker.validate_position(
+            "the lazy dog")
 
         # Should NOT backtrack - trust optimistic for small deviation
         assert is_backtrack is False
@@ -56,7 +53,7 @@ class TestRepeatedWords:
             "The cat is on the mat and the dog is happy")
 
         # Advance through the script
-        text_sequence: List[str] = ["the cat", "the cat is", "the cat is on",
+        text_sequence: list[str] = ["the cat", "the cat is", "the cat is on",
                                     "the cat is on the", "the cat is on the mat"]
         for text in text_sequence:
             tracker.update(text)
@@ -144,9 +141,8 @@ class TestBacktrackSkipDisable:
         tracker.high_water_mark = 3
         tracker.optimistic_position = 3
         # Force a backtrack condition
-        validated_pos: int
         is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.validate_position(
             "beginning middle")
 
         # If backtrack detected, skip logic should be disabled

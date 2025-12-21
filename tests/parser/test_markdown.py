@@ -2,11 +2,9 @@
 Tests for Markdown handling in script parsing.
 """
 
-from typing import List
-
-import pytest
 import markdown
-from src.autocue.script_parser import parse_script, ParsedScript
+
+from src.autocue.script_parser import ParsedScript, parse_script
 
 
 class TestMarkdownHandling:
@@ -28,7 +26,7 @@ End of list."""
         parsed: ParsedScript = parse_script(script, html)
 
         # Get all speakable words
-        words: List[str] = [sw.text for sw in parsed.speakable_words]
+        words: list[str] = [sw.text for sw in parsed.speakable_words]
 
         # "minus" should NOT appear from bullet markers
         # (only from explicit minus like "5 - 3")
@@ -46,7 +44,7 @@ End of list."""
             script, extensions=['nl2br', 'sane_lists'])
         parsed: ParsedScript = parse_script(script, html)
 
-        words: List[str] = [sw.text for sw in parsed.speakable_words]
+        words: list[str] = [sw.text for sw in parsed.speakable_words]
 
         # The '-' between 5 and 3 should expand to "minus"
         assert "minus" in words
@@ -68,7 +66,7 @@ More content."""
         parsed: ParsedScript = parse_script(script, html)
 
         # Get raw token texts
-        raw_texts: List[str] = [rt.text for rt in parsed.raw_tokens]
+        raw_texts: list[str] = [rt.text for rt in parsed.raw_tokens]
 
         # No token should be just "#" or start with "#"
         for text in raw_texts:
@@ -82,7 +80,7 @@ More content."""
             script, extensions=['nl2br', 'sane_lists'])
         parsed: ParsedScript = parse_script(script, html)
 
-        words: List[str] = [sw.text for sw in parsed.speakable_words]
+        words: list[str] = [sw.text for sw in parsed.speakable_words]
 
         # Content words should be present
         assert "bold" in words

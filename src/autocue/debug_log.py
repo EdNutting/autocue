@@ -10,7 +10,6 @@ Logging is disabled by default. Call enable() to turn it on.
 
 from datetime import datetime
 from pathlib import Path
-from typing import List
 
 # Log files location (in project root)
 LOG_DIR: Path = Path(__file__).parent.parent.parent / "logs"
@@ -80,7 +79,7 @@ def log_server_word(word_index: int, word: str, event: str = "match") -> None:
 def log_server_position_update(
     old_pos: int,
     new_pos: int,
-    words_in_range: List[str],
+    words_in_range: list[str],
     reason: str
 ) -> None:
     """
@@ -101,7 +100,7 @@ def log_server_position_update(
         f.write(f"                 words: {words_in_range}\n")
 
 
-def log_server_transcript(transcript: str, new_words: List[str]) -> None:
+def log_server_transcript(transcript: str, new_words: list[str]) -> None:
     """Log the transcript and extracted new words."""
     if not _ENABLED:
         return

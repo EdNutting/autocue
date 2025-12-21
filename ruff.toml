@@ -1,6 +1,12 @@
 # Ruff configuration for Autocue
 # https://docs.astral.sh/ruff/configuration/
 
+# Target Python 3.10+
+target-version = "py310"
+
+# Line length
+line-length = 100
+
 [lint]
 # Enable common rule sets
 select = [
@@ -30,9 +36,3 @@ quote-style = "double"
 
 # Indent with spaces
 indent-style = "space"
-
-# Target Python 3.10+
-target-version = "py310"
-
-# Line length
-line-length = 100

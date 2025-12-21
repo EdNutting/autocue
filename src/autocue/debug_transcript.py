@@ -11,10 +11,9 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Literal, Optional, TextIO
+from typing import Literal, TextIO
 
 from .tracker import ScriptTracker
-
 
 EventType = Literal["BACKTRACK", "FORWARD_JUMP",
                     "advance", "no_advance", "no_change", "regress"]
@@ -31,14 +30,14 @@ class TrackingEvent:
     details: str = ""
 
 
-def load_transcript(path: Path) -> List[str]:
+def load_transcript(path: Path) -> list[str]:
     """Load transcript file and extract transcript lines.
 
     Filters out metadata lines (starting with '===').
     Returns list of transcript text lines.
     """
-    lines: List[str] = []
-    with open(path, 'r', encoding='utf-8') as f:
+    lines: list[str] = []
+    with open(path, encoding='utf-8') as f:
         for line in f:
             stripped_line: str = line.strip()
             # Skip metadata lines and empty lines
@@ -50,16 +49,16 @@ def load_transcript(path: Path) -> List[str]:
 
 def load_script(path: Path) -> str:
     """Load script file content."""
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         return f.read()
 
 
 def replay_transcript(
-    transcript_lines: List[str],
+    transcript_lines: list[str],
     script_text: str,
     output: TextIO,
     verbose: bool = False
-) -> List[TrackingEvent]:
+) -> list[TrackingEvent]:
     """Replay transcript through tracker and log events.
 
     Args:
@@ -72,7 +71,7 @@ def replay_transcript(
         List of all tracking events
     """
     tracker: ScriptTracker = ScriptTracker(script_text)
-    events: List[TrackingEvent] = []
+    events: list[TrackingEvent] = []
 
     # Write header
     output.write("=" * 80 + "\n")
@@ -200,11 +199,11 @@ def replay_transcript(
     output.write("SUMMARY:\n")
     output.write("-" * 40 + "\n")
 
-    backtracks: List[TrackingEvent] = [
+    backtracks: list[TrackingEvent] = [
         e for e in events if e.event_type == "BACKTRACK"]
-    forward_jumps: List[TrackingEvent] = [
+    forward_jumps: list[TrackingEvent] = [
         e for e in events if e.event_type == "FORWARD_JUMP"]
-    advances: List[TrackingEvent] = [
+    advances: list[TrackingEvent] = [
         e for e in events if e.event_type == "advance"]
 
     output.write(f"Total lines processed: {len(transcript_lines)}\n")
@@ -235,11 +234,11 @@ def replay_transcript(
 
 
 def replay_transcript_word_by_word(
-    transcript_lines: List[str],
+    transcript_lines: list[str],
     script_text: str,
     output: TextIO,
     verbose: bool = False
-) -> List[TrackingEvent]:
+) -> list[TrackingEvent]:
     """Replay transcript word-by-word (simulating partial results).
 
     This mode simulates how Vosk delivers partial results word by word,
@@ -255,7 +254,7 @@ def replay_transcript_word_by_word(
         List of all tracking events
     """
     tracker: ScriptTracker = ScriptTracker(script_text)
-    events: List[TrackingEvent] = []
+    events: list[TrackingEvent] = []
 
     # Write header
     output.write("=" * 80 + "\n")
@@ -278,7 +277,7 @@ def replay_transcript_word_by_word(
     word_count: int = 0
 
     for line_num, line in enumerate(transcript_lines, start=1):
-        words: List[str] = line.split()
+        words: list[str] = line.split()
         if not words:
             continue
 
@@ -324,7 +323,7 @@ def replay_transcript_word_by_word(
             # For no_advance: show position_before and the word there
             display_pos: int
             script_word: str
-            prev_script_word: Optional[str]
+            prev_script_word: str | None
             if event_type == "advance":
                 # Show the new position we advanced TO
                 display_pos = position_after
@@ -431,13 +430,13 @@ def replay_transcript_word_by_word(
     output.write("SUMMARY:\n")
     output.write("-" * 40 + "\n")
 
-    backtracks: List[TrackingEvent] = [
+    backtracks: list[TrackingEvent] = [
         e for e in events if e.event_type == "BACKTRACK"]
-    forward_jumps: List[TrackingEvent] = [
+    forward_jumps: list[TrackingEvent] = [
         e for e in events if e.event_type == "FORWARD_JUMP"]
-    advances: List[TrackingEvent] = [
+    advances: list[TrackingEvent] = [
         e for e in events if e.event_type == "advance"]
-    no_advances: List[TrackingEvent] = [
+    no_advances: list[TrackingEvent] = [
         e for e in events if e.event_type == "no_advance"]
 
     output.write(f"Total words processed: {word_count}\n")
@@ -519,7 +518,7 @@ def main() -> None:
 
     # Load files
     try:
-        transcript_lines: List[str] = load_transcript(args.transcript)
+        transcript_lines: list[str] = load_transcript(args.transcript)
         script_text: str = load_script(args.script)
     except OSError as e:
         print(f"Error loading files: {e}", file=sys.stderr)

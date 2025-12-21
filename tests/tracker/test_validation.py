@@ -2,9 +2,6 @@
 Tests for validation triggering and backtrack detection in ScriptTracker.
 """
 
-from typing import List
-
-import pytest
 from src.autocue.tracker import ScriptTracker
 
 
@@ -19,7 +16,7 @@ class TestValidationTriggering:
         assert tracker.needs_validation is False
 
         # Speak 4 words - no validation yet
-        texts: List[str] = ["one", "one two",
+        texts: list[str] = ["one", "one two",
                             "one two three", "one two three four"]
         for text in texts:
             tracker.update(text)
@@ -35,7 +32,7 @@ class TestValidationTriggering:
             "one two three four five six seven eight nine ten")
 
         # Trigger validation
-        texts: List[str] = ["one", "one two", "one two three", "one two three four",
+        texts: list[str] = ["one", "one two", "one two three", "one two three four",
                             "one two three four five"]
         for text in texts:
             tracker.update(text)
@@ -57,7 +54,7 @@ class TestBacktrackDetection:
         )
 
         # Advance to word 8 (dog)
-        texts: List[str] = ["the", "the quick", "the quick brown", "the quick brown fox",
+        texts: list[str] = ["the", "the quick", "the quick brown", "the quick brown fox",
                             "the quick brown fox jumps", "the quick brown fox jumps over",
                             "the quick brown fox jumps over the",
                             "the quick brown fox jumps over the lazy"]
@@ -70,9 +67,8 @@ class TestBacktrackDetection:
         # Simulate a real backtrack - user restarts with completely different words
         # that match the beginning of the script, not near position 8
         tracker.needs_validation = True
-        validated_pos: int
         is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.validate_position(
             "the quick brown")
 
         assert is_backtrack is True
@@ -85,9 +81,8 @@ class TestBacktrackDetection:
 
         tracker.update("the quick")
         tracker.needs_validation = True
-        validated_pos: int
         is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.validate_position(
             "the quick brown")
 
         assert is_backtrack is False
@@ -98,7 +93,7 @@ class TestBacktrackDetection:
             "The quick brown fox jumps over the lazy dog")
 
         # Advance to position 4 (after "fox")
-        texts: List[str] = ["the", "the quick",
+        texts: list[str] = ["the", "the quick",
                             "the quick brown", "the quick brown fox"]
         for text in texts:
             tracker.update(text)
@@ -108,9 +103,8 @@ class TestBacktrackDetection:
         # Force validation with transcript that matches around position 3-4
         # (small deviation from optimistic position of 4)
         tracker.needs_validation = True
-        validated_pos: int
         is_backtrack: bool
-        validated_pos, is_backtrack = tracker.validate_position(
+        _validated_pos, is_backtrack = tracker.validate_position(
             "quick brown fox jumps"
         )
 

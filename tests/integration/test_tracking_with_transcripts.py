@@ -8,11 +8,10 @@ These tests use real transcript data to verify that the tracker:
 """
 
 from pathlib import Path
-from typing import List, Tuple
 
 import pytest
 
-from src.autocue.tracker import ScriptTracker, ScriptPosition
+from src.autocue.tracker import ScriptPosition, ScriptTracker
 
 
 class TestTranscriptTracking:
@@ -26,16 +25,16 @@ class TestTranscriptTracking:
         return script_path.read_text()
 
     @pytest.fixture
-    def number_test_transcript(self) -> List[str]:
+    def number_test_transcript(self) -> list[str]:
         """Load and parse the number test transcript, excluding start/end markers."""
         transcript_path: Path = (
             Path(__file__).parent.parent.parent / "transcripts" /
             "transcript_20251221_000011.txt"
         )
-        lines: List[str] = transcript_path.read_text().strip().split("\n")
+        lines: list[str] = transcript_path.read_text().strip().split("\n")
 
         # Filter out the "Transcript started" and "Transcript ended" lines
-        content_lines: List[str] = []
+        content_lines: list[str] = []
         for line in lines:
             line = line.strip()
             if line.startswith("===") or not line:
@@ -44,7 +43,7 @@ class TestTranscriptTracking:
 
         return content_lines
 
-    def test_transcript_loads_correctly(self, number_test_transcript: List[str]) -> None:
+    def test_transcript_loads_correctly(self, number_test_transcript: list[str]) -> None:
         """Verify transcript is loaded and parsed correctly."""
         assert len(number_test_transcript) > 0
         # First content line should be about "number expansion test"
@@ -55,7 +54,11 @@ class TestTranscriptTracking:
         assert len(number_test_script) > 0
         assert "Number Expansion Test Script" in number_test_script
 
-    def test_smooth_tracking_word_by_word(self, number_test_script: str, number_test_transcript: List[str]) -> None:
+    def test_smooth_tracking_word_by_word(
+        self,
+        number_test_script: str,
+        number_test_transcript: list[str]
+    ) -> None:
         """Verify tracking advances smoothly when feeding words one at a time.
 
         The tracking system should handle number format differences between
@@ -65,14 +68,14 @@ class TestTranscriptTracking:
         tracker: ScriptTracker = ScriptTracker(number_test_script)
 
         # Build cumulative transcript word by word
-        all_words: List[str] = []
+        all_words: list[str] = []
         for line in number_test_transcript:
-            words: List[str] = line.split()
+            words: list[str] = line.split()
             all_words.extend(words)
 
         max_jump: int = 0
         last_position: int = 0
-        position_history: List[int] = [0]
+        position_history: list[int] = [0]
 
         # Feed every word to simulate word-by-word updates
         cumulative_text: str = ""
@@ -102,7 +105,11 @@ class TestTranscriptTracking:
         final_progress: float = tracker.progress
         assert final_progress > 0.8, f"Final progress was {final_progress:.2%}, expected > 80%"
 
-    def test_smooth_tracking_chunk_by_chunk(self, number_test_script: str, number_test_transcript: List[str]) -> None:
+    def test_smooth_tracking_chunk_by_chunk(
+        self,
+        number_test_script: str,
+        number_test_transcript: list[str]
+    ) -> None:
         """Verify tracking advances smoothly when feeding transcript line by line (chunks).
 
         For chunk updates, jumps should be proportional to the number of words in the chunk.
@@ -111,7 +118,7 @@ class TestTranscriptTracking:
         tracker: ScriptTracker = ScriptTracker(number_test_script)
 
         last_position: int = 0
-        disproportionate_jumps: List[Tuple[int, int, str]] = []
+        disproportionate_jumps: list[tuple[int, int, str]] = []
 
         # Feed transcript line by line (simulating chunks of speech)
         cumulative_text: str = ""
@@ -146,7 +153,11 @@ class TestTranscriptTracking:
         final_progress: float = tracker.progress
         assert final_progress > 0.8, f"Final progress was {final_progress:.2%}, expected > 80%"
 
-    def test_no_backtracking(self, number_test_script: str, number_test_transcript: List[str]) -> None:
+    def test_no_backtracking(
+        self,
+        number_test_script: str,
+        number_test_transcript: list[str]
+    ) -> None:
         """Verify that tracking never goes backward unexpectedly."""
         tracker: ScriptTracker = ScriptTracker(number_test_script)
 
@@ -155,7 +166,7 @@ class TestTranscriptTracking:
         largest_backtrack: int = 0
 
         # Feed transcript word by word
-        all_words: List[str] = []
+        all_words: list[str] = []
         for line in number_test_transcript:
             all_words.extend(line.split())
 
@@ -183,7 +194,11 @@ class TestTranscriptTracking:
         # Allow a few small backtracks due to speech recognition differences
         assert backtrack_count <= 3, f"Backtrack count was {backtrack_count}, expected <= 3"
 
-    def test_no_forward_jumps(self, number_test_script: str, number_test_transcript: List[str]) -> None:
+    def test_no_forward_jumps(
+        self,
+        number_test_script: str,
+        number_test_transcript: list[str]
+    ) -> None:
         """Verify that tracking never jumps forward unexpectedly."""
         tracker: ScriptTracker = ScriptTracker(number_test_script)
 
@@ -191,7 +206,7 @@ class TestTranscriptTracking:
         largest_forward_jump: int = 0
 
         # Feed transcript word by word
-        all_words: List[str] = []
+        all_words: list[str] = []
         for line in number_test_transcript:
             all_words.extend(line.split())
 
@@ -226,7 +241,11 @@ class TestTranscriptTracking:
         jump_ratio: float = large_jump_count / total_updates
         assert jump_ratio < 0.1, f"Large jump ratio was {jump_ratio:.2%}, expected < 10%"
 
-    def test_mixed_word_and_chunk_updates(self, number_test_script: str, number_test_transcript: List[str]) -> None:
+    def test_mixed_word_and_chunk_updates(
+        self,
+        number_test_script: str,
+        number_test_transcript: list[str]
+    ) -> None:
         """Verify tracking works with mixed update patterns (some words, some chunks).
 
         This test adds 1-4 words at a time. For small chunks, jumps should be small.
@@ -235,10 +254,10 @@ class TestTranscriptTracking:
         tracker: ScriptTracker = ScriptTracker(number_test_script)
 
         last_position: int = 0
-        large_jumps: List[Tuple[int, int]] = []
+        large_jumps: list[tuple[int, int]] = []
 
         # Combine lines into one big list of words
-        all_words: List[str] = []
+        all_words: list[str] = []
         for line in number_test_transcript:
             all_words.extend(line.split())
 
@@ -247,7 +266,7 @@ class TestTranscriptTracking:
 
         while word_idx < len(all_words):
             # Pick between 1 and 4 words to add using deterministic pattern
-            pattern: List[int] = [1, 3, 2, 4]
+            pattern: list[int] = [1, 3, 2, 4]
             chunk_size: int = pattern[word_idx % len(pattern)]
             actual_chunk: int = 0
 
@@ -284,13 +303,13 @@ class TestTranscriptTracking:
         assert final_progress > 0.8, f"Final progress was {final_progress:.2%}, expected > 80%"
 
     def test_position_never_exceeds_script_length(
-        self, number_test_script: str, number_test_transcript: List[str]
+        self, number_test_script: str, number_test_transcript: list[str]
     ) -> None:
         """Verify position never goes beyond the script length."""
         tracker: ScriptTracker = ScriptTracker(number_test_script)
         script_length: int = len(tracker.words)
 
-        all_words: List[str] = []
+        all_words: list[str] = []
         for line in number_test_transcript:
             all_words.extend(line.split())
 
@@ -307,7 +326,7 @@ class TestTranscriptTracking:
                 f"Position {pos.speakable_index} exceeded script length {script_length}"
 
     def test_consistent_position_on_repeated_updates(
-        self, number_test_script: str, number_test_transcript: List[str]
+        self, number_test_script: str, number_test_transcript: list[str]
     ) -> None:
         """Verify that updating with the same text doesn't change position."""
         tracker: ScriptTracker = ScriptTracker(number_test_script)
@@ -325,16 +344,20 @@ class TestTranscriptTracking:
             (f"Position changed on repeated updates: "
              f"{pos1.speakable_index}, {pos2.speakable_index}, {pos3.speakable_index}")
 
-    def test_steady_progress_through_script(self, number_test_script: str, number_test_transcript: List[str]) -> None:
+    def test_steady_progress_through_script(
+        self,
+        number_test_script: str,
+        number_test_transcript: list[str]
+    ) -> None:
         """Verify steady forward progress through the script."""
         tracker: ScriptTracker = ScriptTracker(number_test_script)
 
-        all_words: List[str] = []
+        all_words: list[str] = []
         for line in number_test_transcript:
             all_words.extend(line.split())
 
         cumulative_text: str = ""
-        progress_samples: List[float] = []
+        progress_samples: list[float] = []
 
         # Sample progress at regular intervals
         sample_interval: int = len(all_words) // 10  # 10 samples

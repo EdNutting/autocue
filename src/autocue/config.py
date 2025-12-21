@@ -4,10 +4,9 @@ Handles loading and saving settings from a YAML config file.
 """
 
 from pathlib import Path
-from typing import Any, Optional, TypedDict
+from typing import Any, TypedDict
 
 import yaml
-
 
 CONFIG_FILENAME: str = ".autocue.yaml"
 
@@ -37,10 +36,10 @@ class TrackingSettings(TypedDict):
 class Config(TypedDict):
     """Type definition for the complete configuration."""
     model: str
-    model_path: Optional[str]
+    model_path: str | None
     host: str
     port: int
-    audio_device: Optional[int]
+    audio_device: int | None
     chunk_ms: int
     display: DisplaySettings
     tracking: TrackingSettings
@@ -107,7 +106,7 @@ def _deep_merge(base, override):
     return result
 
 
-def load_config(config_path: Optional[Path] = None) -> Config:
+def load_config(config_path: Path | None = None) -> Config:
     """
     Load configuration from file, merged with defaults.
 
@@ -126,8 +125,8 @@ def load_config(config_path: Optional[Path] = None) -> Config:
     # Load from file if it exists
     if config_path.exists():
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                file_config: Optional[dict[str, Any]] = yaml.safe_load(f)
+            with open(config_path, encoding='utf-8') as f:
+                file_config: dict[str, Any] | None = yaml.safe_load(f)
                 if file_config:
                     config = _deep_merge(config, file_config)
         except (OSError, yaml.YAMLError) as e:
@@ -136,7 +135,7 @@ def load_config(config_path: Optional[Path] = None) -> Config:
     return config  # type: ignore[return-value]
 
 
-def save_config(config: Config, config_path: Optional[Path] = None) -> bool:
+def save_config(config: Config, config_path: Path | None = None) -> bool:
     """
     Save configuration to file.
 

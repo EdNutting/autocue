@@ -1,16 +1,15 @@
 """Tests for the debug_transcript module."""
 
 import io
-from pathlib import Path
 import tempfile
-from typing import List
+from pathlib import Path
 
 from autocue.debug_transcript import (
-    load_transcript,
+    TrackingEvent,
     load_script,
+    load_transcript,
     replay_transcript,
     replay_transcript_word_by_word,
-    TrackingEvent,
 )
 
 
@@ -29,7 +28,7 @@ class TestLoadTranscript:
             f.flush()
             path: Path = Path(f.name)
 
-        lines: List[str] = load_transcript(path)
+        lines: list[str] = load_transcript(path)
         assert len(lines) == 2
         assert lines[0] == "hello world"
         assert lines[1] == "this is a test"
@@ -44,7 +43,7 @@ class TestLoadTranscript:
             f.flush()
             path: Path = Path(f.name)
 
-        lines: List[str] = load_transcript(path)
+        lines: list[str] = load_transcript(path)
         assert len(lines) == 2
         assert lines[0] == "first line"
         assert lines[1] == "second line"
@@ -71,10 +70,10 @@ class TestReplayTranscript:
     def test_replay_produces_events(self) -> None:
         """Verify replay produces tracking events."""
         script_text: str = "hello world this is a test script"
-        transcript_lines: List[str] = ["hello world", "this is a test"]
+        transcript_lines: list[str] = ["hello world", "this is a test"]
 
         output: io.StringIO = io.StringIO()
-        events: List[TrackingEvent] = replay_transcript(
+        events: list[TrackingEvent] = replay_transcript(
             transcript_lines, script_text, output)
 
         assert len(events) == 2
@@ -83,10 +82,10 @@ class TestReplayTranscript:
     def test_replay_tracks_positions(self) -> None:
         """Verify positions advance through the script."""
         script_text: str = "one two three four five six seven"
-        transcript_lines: List[str] = ["one two three", "four five six"]
+        transcript_lines: list[str] = ["one two three", "four five six"]
 
         output: io.StringIO = io.StringIO()
-        events: List[TrackingEvent] = replay_transcript(
+        events: list[TrackingEvent] = replay_transcript(
             transcript_lines, script_text, output)
 
         # Positions should increase
@@ -95,7 +94,7 @@ class TestReplayTranscript:
     def test_replay_output_contains_header(self) -> None:
         """Verify output contains header information."""
         script_text: str = "hello world"
-        transcript_lines: List[str] = ["hello"]
+        transcript_lines: list[str] = ["hello"]
 
         output: io.StringIO = io.StringIO()
         replay_transcript(transcript_lines, script_text, output)
@@ -113,10 +112,10 @@ class TestReplayTranscriptWordByWord:
     def test_word_by_word_produces_more_events(self) -> None:
         """Verify word-by-word mode produces an event per word."""
         script_text: str = "one two three four five"
-        transcript_lines: List[str] = ["one two three"]
+        transcript_lines: list[str] = ["one two three"]
 
         output: io.StringIO = io.StringIO()
-        events: List[TrackingEvent] = replay_transcript_word_by_word(
+        events: list[TrackingEvent] = replay_transcript_word_by_word(
             transcript_lines, script_text, output)
 
         # Should have 3 events (one per word in transcript)
@@ -128,10 +127,10 @@ class TestReplayTranscriptWordByWord:
     def test_word_by_word_tracks_matches(self) -> None:
         """Verify word-by-word mode tracks matching words."""
         script_text: str = "hello world test"
-        transcript_lines: List[str] = ["hello world"]
+        transcript_lines: list[str] = ["hello world"]
 
         output: io.StringIO = io.StringIO()
-        events: List[TrackingEvent] = replay_transcript_word_by_word(
+        events: list[TrackingEvent] = replay_transcript_word_by_word(
             transcript_lines, script_text, output)
 
         # First word should advance position - we now show the NEW position
@@ -144,7 +143,7 @@ class TestReplayTranscriptWordByWord:
     def test_word_by_word_verbose_output(self) -> None:
         """Verify verbose mode includes match information."""
         script_text: str = "hello world"
-        transcript_lines: List[str] = ["hello world"]
+        transcript_lines: list[str] = ["hello world"]
 
         output: io.StringIO = io.StringIO()
         replay_transcript_word_by_word(
@@ -161,10 +160,10 @@ class TestTrackingEventTypes:
     def test_detects_forward_progress(self) -> None:
         """Verify forward progress is tracked."""
         script_text: str = "the quick brown fox jumps over the lazy dog"
-        transcript_lines: List[str] = ["the quick brown", "fox jumps over"]
+        transcript_lines: list[str] = ["the quick brown", "fox jumps over"]
 
         output: io.StringIO = io.StringIO()
-        events: List[TrackingEvent] = replay_transcript(
+        events: list[TrackingEvent] = replay_transcript(
             transcript_lines, script_text, output)
 
         # Should have advancing positions

@@ -9,7 +9,6 @@ Tracks which expansions are still valid as words are matched, and
 determines when an expansion is complete.
 """
 
-from typing import List
 
 from rapidfuzz import fuzz
 
@@ -40,10 +39,10 @@ class ExpansionMatcher:
         self.parsed_script: ParsedScript = parsed_script
 
         # Dynamic expansion matching state
-        self.active_expansions: List[List[str]] = []
+        self.active_expansions: list[list[str]] = []
         self.expansion_match_position: int = 0
 
-    def get_first_words(self, speakable_idx: int) -> List[str]:
+    def get_first_words(self, speakable_idx: int) -> list[str]:
         """
         Get all possible FIRST words that could start matching at a position.
 
@@ -65,7 +64,7 @@ class ExpansionMatcher:
 
         if sw.is_expansion and sw.all_expansions:
             # Get the first word from each expansion
-            first_words: List[str] = []
+            first_words: list[str] = []
             for exp in sw.all_expansions:
                 if exp:
                     word: str = exp[0].lower()
@@ -124,7 +123,7 @@ class ExpansionMatcher:
             return False
 
         pos: int = self.expansion_match_position
-        remaining: List[List[str]] = []
+        remaining: list[list[str]] = []
 
         for exp in self.active_expansions:
             if pos < len(exp):
@@ -151,10 +150,7 @@ class ExpansionMatcher:
             return False
 
         pos: int = self.expansion_match_position
-        for exp in self.active_expansions:
-            if pos >= len(exp):
-                return True
-        return False
+        return any(pos >= len(exp) for exp in self.active_expansions)
 
     def clear(self) -> None:
         """Clear the expansion matching state."""

@@ -4,7 +4,8 @@ Captures audio in small chunks and feeds them to the transcriber.
 """
 
 import queue
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -17,16 +18,16 @@ class AudioCapture:
     sample_rate: int
     chunk_duration_ms: int
     chunk_size: int
-    device: Optional[int]
+    device: int | None
     audio_queue: queue.Queue[bytes]
-    stream: Optional[sd.RawInputStream]
+    stream: sd.RawInputStream | None
     running: bool
 
     def __init__(
         self,
         sample_rate: int = 16000,
         chunk_duration_ms: int = 100,
-        device: Optional[int] = None
+        device: int | None = None
     ) -> None:
         """
         Initialize audio capture.
@@ -42,7 +43,7 @@ class AudioCapture:
         self.device = device
 
         self.audio_queue: queue.Queue[bytes] = queue.Queue()
-        self.stream: Optional[sd.RawInputStream] = None
+        self.stream: sd.RawInputStream | None = None
         self.running = False
 
     def _audio_callback(
@@ -82,7 +83,7 @@ class AudioCapture:
             self.stream.close()
             self.stream = None
 
-    def get_chunk(self, timeout: float = 0.5) -> Optional[bytes]:
+    def get_chunk(self, timeout: float = 0.5) -> bytes | None:
         """
         Get the next audio chunk.
 
