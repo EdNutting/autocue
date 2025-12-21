@@ -4,3 +4,4 @@ autocue.egg-info
 .DS_Store
 .autocue.yaml
 transcripts/
+.claude/settings.local.json

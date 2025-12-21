@@ -92,13 +92,15 @@ class WordIndexingHTMLParser(HTMLParser):
                 result.append(part)
             else:
                 # Escape HTML entities
-                escaped = part.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                escaped = part.replace('&', '&amp;').replace(
+                    '<', '&lt;').replace('>', '&gt;')
 
                 # Check if this matches the current raw token
                 if self._token_matches(part) and self.current_raw_token is not None:
                     # Wrap with span using the raw token index
                     idx = self.current_raw_token.index
-                    result.append(f'<span class="word" data-word-index="{idx}">{escaped}</span>')
+                    result.append(
+                        f'<span class="word" data-word-index="{idx}">{escaped}</span>')
                     self._advance_token()
                 else:
                     # No matching token - output as-is (shouldn't happen normally)
@@ -195,8 +197,10 @@ class WebServer:
         self.total_words: int = 0
         self._reset_requested: bool = False
         self._jump_requested: Optional[int] = None
-        self._transcript_toggle_requested: Optional[bool] = None  # True=start, False=stop
-        self._start_transcript_on_script: bool = False  # Start transcript when script loads
+        # True=start, False=stop
+        self._transcript_toggle_requested: Optional[bool] = None
+        # Start transcript when script loads
+        self._start_transcript_on_script: bool = False
 
         # Merge initial settings with defaults
         self.settings = self.DEFAULT_SETTINGS.copy()
@@ -226,7 +230,7 @@ class WebServer:
         if script_path.exists() and script_path.suffix == ".md":
             return script_path.read_text(encoding="utf-8")
         return None
-        
+
     def _setup_routes(self):
         """Set up HTTP routes."""
         self.app.router.add_get('/', self._handle_index)
@@ -235,21 +239,22 @@ class WebServer:
         self.app.router.add_post('/settings', self._handle_settings)
         self.app.router.add_get('/settings', self._handle_get_settings)
         self.app.router.add_post('/save-config', self._handle_save_config)
-        self.app.router.add_get('/audio-devices', self._handle_get_audio_devices)
-        
+        self.app.router.add_get(
+            '/audio-devices', self._handle_get_audio_devices)
+
     async def _handle_index(self, request: web.Request) -> web.Response:
         """Serve the main HTML page."""
         html = self._get_html()
         return web.Response(text=html, content_type='text/html')
-        
+
     async def _handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connections for real-time updates."""
         ws = web.WebSocketResponse()
         await ws.prepare(request)
-        
+
         self.websockets.add(ws)
         print(f"WebSocket connected. Total: {len(self.websockets)}")
-        
+
         try:
             # Send current state
             config = load_config()
@@ -262,7 +267,7 @@ class WebServer:
                 "samples": self._get_sample_scripts(),
                 "audioDevice": config.get("audio_device")
             })
-            
+
             async for msg in ws:
                 if msg.type == web.WSMsgType.TEXT:
                     data = json.loads(msg.data)
@@ -272,131 +277,145 @@ class WebServer:
         finally:
             self.websockets.discard(ws)
             print(f"WebSocket disconnected. Total: {len(self.websockets)}")
-            
+
         return ws
-        
+
     async def _handle_ws_message(self, ws: web.WebSocketResponse, data: dict):
-        """Handle incoming WebSocket messages."""
+        """Handle incoming WebSocket messages using dispatch pattern."""
         msg_type = data.get("type")
-        
-        if msg_type == "script":
-            self.script_text = data.get("text", "")
-            # Capture transcript preference - will be checked when script is loaded
-            self._start_transcript_on_script = data.get("saveTranscript", False)
-            # Render with word indices embedded in the HTML
-            self.script_html, self.total_words, _ = render_script_with_word_indices(
-                self.script_text
-            )
-            # Broadcast to all clients
-            await self.broadcast({
-                "type": "script_updated",
-                "script": self.script_text,
-                "scriptHtml": self.script_html,
-                "totalWords": self.total_words
-            })
-            
-        elif msg_type == "settings":
-            self.settings.update(data.get("settings", {}))
-            await self.broadcast({
-                "type": "settings_updated",
-                "settings": self.settings
-            })
-            
-        elif msg_type == "reset":
-            await self.broadcast({"type": "reset"})
-            # Signal main app to reset tracker
-            self._reset_requested = True
+        if not msg_type:
+            return
 
-        elif msg_type == "jump_to":
-            # User clicked to jump to a specific position
-            word_index = data.get("wordIndex", 0)
-            await self.broadcast({
-                "type": "jump_to",
-                "wordIndex": word_index
-            })
-            # Signal main app to jump tracker
-            self._jump_requested = word_index
+        # Message type to handler dispatch
+        handlers = {
+            "script": self._on_script_message,
+            "settings": self._on_settings_message,
+            "reset": self._on_reset_message,
+            "jump_to": self._on_jump_to_message,
+            "save_config": self._on_save_config_message,
+            "frontend_highlight": self._on_frontend_highlight_message,
+            "load_sample": self._on_load_sample_message,
+            "toggle_transcript": self._on_toggle_transcript_message,
+            "set_audio_device": self._on_set_audio_device_message,
+        }
 
-        elif msg_type == "save_config":
-            # Save current settings to config file
-            try:
-                config = load_config()
-                config = update_config_display(config, self.settings)
-                success = save_config(config)
+        handler = handlers.get(msg_type)
+        if handler:
+            await handler(ws, data)
+        else:
+            logger.warning(f"Unhandled WebSocket message: {msg_type}")
+
+    async def _on_script_message(self, _ws: web.WebSocketResponse, data: dict):
+        """Handle script update message."""
+        self.script_text = data.get("text", "")
+        self._start_transcript_on_script = data.get("saveTranscript", False)
+        await self._render_and_broadcast_script()
+
+    async def _on_settings_message(self, _ws: web.WebSocketResponse, data: dict):
+        """Handle settings update message."""
+        self.settings.update(data.get("settings", {}))
+        await self.broadcast({
+            "type": "settings_updated",
+            "settings": self.settings
+        })
+
+    async def _on_reset_message(self, _ws: web.WebSocketResponse, _data: dict):
+        """Handle reset message."""
+        await self.broadcast({"type": "reset"})
+        self._reset_requested = True
+
+    async def _on_jump_to_message(self, _ws: web.WebSocketResponse, data: dict):
+        """Handle jump to position message."""
+        word_index = data.get("wordIndex", 0)
+        await self.broadcast({
+            "type": "jump_to",
+            "wordIndex": word_index
+        })
+        self._jump_requested = word_index
+
+    async def _on_save_config_message(self, ws: web.WebSocketResponse, _data: dict):
+        """Handle save config message."""
+        try:
+            config = load_config()
+            config = update_config_display(config, self.settings)
+            success = save_config(config)
+            await ws.send_json({
+                "type": "config_saved",
+                "success": success
+            })
+        except Exception as e:
+            await ws.send_json({
+                "type": "config_saved",
+                "success": False,
+                "error": str(e)
+            })
+
+    async def _on_frontend_highlight_message(self, _ws: web.WebSocketResponse, data: dict):
+        """Handle frontend highlight debug message."""
+        word_index = data.get("wordIndex", -1)
+        word = data.get("word", "")
+        source_line = data.get("sourceLine", -1)
+        source_offset = data.get("sourceOffset", -1)
+        server_word_index = data.get("serverWordIndex", -1)
+        debug_log.log_frontend_word(
+            word_index, word, source_line, source_offset)
+        debug_log.log_frontend_server_data(
+            server_word_index, source_line, source_offset)
+
+    async def _on_load_sample_message(self, _ws: web.WebSocketResponse, data: dict):
+        """Handle load sample script message."""
+        filename = data.get("filename", "")
+        content = self._load_sample_script(filename)
+        if content is not None:
+            self.script_text = content
+            await self._render_and_broadcast_script()
+
+    async def _on_toggle_transcript_message(self, _ws: web.WebSocketResponse, data: dict):
+        """Handle toggle transcript message."""
+        self._transcript_toggle_requested = data.get("enable", False)
+
+    async def _on_set_audio_device_message(self, ws: web.WebSocketResponse, data: dict):
+        """Handle set audio device message."""
+        device_index = data.get("deviceIndex")
+        try:
+            config = load_config()
+            config["audio_device"] = device_index
+            if save_config(config):
                 await ws.send_json({
-                    "type": "config_saved",
-                    "success": success
+                    "type": "audio_device_updated",
+                    "success": True,
+                    "deviceIndex": device_index
                 })
-            except Exception as e:
-                await ws.send_json({
-                    "type": "config_saved",
-                    "success": False,
-                    "error": str(e)
-                })
-
-        elif msg_type == "frontend_highlight":
-            # Frontend reporting what word it's highlighting
-            word_index = data.get("wordIndex", -1)
-            word = data.get("word", "")
-            source_line = data.get("sourceLine", -1)
-            source_offset = data.get("sourceOffset", -1)
-            server_word_index = data.get("serverWordIndex", -1)
-            debug_log.log_frontend_word(word_index, word, source_line, source_offset)
-            # Also log the raw server data
-            debug_log.log_frontend_server_data(server_word_index, source_line, source_offset)
-
-        elif msg_type == "load_sample":
-            # Load a sample script by filename
-            filename = data.get("filename", "")
-            content = self._load_sample_script(filename)
-            if content is not None:
-                self.script_text = content
-                self.script_html, self.total_words, _ = render_script_with_word_indices(
-                    self.script_text
-                )
                 await self.broadcast({
-                    "type": "script_updated",
-                    "script": self.script_text,
-                    "scriptHtml": self.script_html,
-                    "totalWords": self.total_words
+                    "type": "audio_device_updated",
+                    "success": True,
+                    "deviceIndex": device_index
                 })
-
-        elif msg_type == "toggle_transcript":
-            # Toggle transcript recording
-            enable = data.get("enable", False)
-            self._transcript_toggle_requested = enable
-
-        elif msg_type == "set_audio_device":
-            # Update audio device in config
-            device_index = data.get("deviceIndex")
-            try:
-                config = load_config()
-                config["audio_device"] = device_index
-                if save_config(config):
-                    await ws.send_json({
-                        "type": "audio_device_updated",
-                        "success": True,
-                        "deviceIndex": device_index
-                    })
-                    # Broadcast to all clients
-                    await self.broadcast({
-                        "type": "audio_device_updated",
-                        "success": True,
-                        "deviceIndex": device_index
-                    })
-                else:
-                    await ws.send_json({
-                        "type": "audio_device_updated",
-                        "success": False,
-                        "error": "Failed to save config"
-                    })
-            except Exception as e:
+            else:
                 await ws.send_json({
                     "type": "audio_device_updated",
                     "success": False,
-                    "error": str(e)
+                    "error": "Failed to save config"
                 })
-            
+        except Exception as e:
+            await ws.send_json({
+                "type": "audio_device_updated",
+                "success": False,
+                "error": str(e)
+            })
+
+    async def _render_and_broadcast_script(self):
+        """Render script to HTML and broadcast to all clients."""
+        self.script_html, self.total_words, _ = render_script_with_word_indices(
+            self.script_text
+        )
+        await self.broadcast({
+            "type": "script_updated",
+            "script": self.script_text,
+            "scriptHtml": self.script_html,
+            "totalWords": self.total_words
+        })
+
     async def _handle_script_upload(self, request: web.Request) -> web.Response:
         """Handle script upload via POST."""
         data = await request.json()
@@ -412,7 +431,7 @@ class WebServer:
             "totalWords": self.total_words
         })
         return web.json_response({"status": "ok"})
-        
+
     async def _handle_settings(self, request: web.Request) -> web.Response:
         """Handle settings update via POST."""
         data = await request.json()
@@ -422,7 +441,7 @@ class WebServer:
             "settings": self.settings
         })
         return web.json_response({"status": "ok", "settings": self.settings})
-        
+
     async def _handle_get_settings(self, request: web.Request) -> web.Response:
         """Get current settings."""
         return web.json_response(self.settings)
@@ -472,7 +491,7 @@ class WebServer:
         """Send a message to all connected WebSocket clients."""
         if not self.websockets:
             return
-            
+
         dead = set()
         for ws in self.websockets:
             try:
@@ -480,9 +499,9 @@ class WebServer:
             except (ConnectionError, ConnectionResetError, RuntimeError) as e:
                 print(f"Error sending to WebSocket: {e}")
                 dead.add(ws)
-                
+
         self.websockets -= dead
-        
+
     async def send_transcript_status(self, recording: bool, file: Optional[str] = None):
         """Send transcript recording status to all clients."""
         await self.broadcast({
@@ -516,7 +535,7 @@ class WebServer:
             "isBacktrack": is_backtrack,
             "transcript": transcript
         })
-        
+
     async def start(self):
         """Start the web server."""
         self.runner = web.AppRunner(self.app)
@@ -524,7 +543,7 @@ class WebServer:
         site = web.TCPSite(self.runner, self.host, self.port)
         await site.start()
         print(f"Web server running at http://{self.host}:{self.port}")
-        
+
     async def stop(self):
         """Stop the web server."""
         # Close all WebSocket connections
@@ -537,7 +556,7 @@ class WebServer:
 
         if self.runner:
             await self.runner.cleanup()
-            
+
     def _get_html(self) -> str:
         """Load and return the HTML for the autocue interface from static/index.html."""
         static_dir = Path(__file__).parent / "static"
