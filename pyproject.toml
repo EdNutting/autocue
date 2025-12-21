@@ -27,6 +27,7 @@ dev = [
 
 [project.scripts]
 autocue = "autocue.main:main"
+autocue-debug-transcript = "autocue.debug_transcript:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

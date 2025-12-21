@@ -81,6 +81,57 @@ class TestWordSkipping:
         assert pos.word_index == initial_pos
 
 
+class TestFillerWordHandling:
+    """Tests for filler word detection and handling."""
+
+    def test_filler_word_skipped_when_not_in_script(self):
+        """Filler words like 'um' should be skipped when not in script."""
+        tracker = ScriptTracker("The quick brown fox")
+
+        # "um" is a filler and not in script - should be skipped
+        pos = tracker.update("the um quick")
+        # Should advance for "the" and "quick", skipping "um"
+        assert pos.word_index == 2
+
+    def test_filler_word_matches_when_in_script(self):
+        """Filler words should match when they ARE in the script.
+
+        This is the bug fix: 'like' was being skipped even when
+        the script contained 'like' at the current position.
+        """
+        tracker = ScriptTracker("I like cats")
+
+        pos1 = tracker.update("i")
+        assert pos1.word_index == 1  # Passed "i"
+
+        # "like" is in FILLER_WORDS but also in the script at position 1
+        # It should match, not be skipped
+        pos2 = tracker.update("i like")
+        assert pos2.word_index == 2  # Passed "like"
+
+        pos3 = tracker.update("i like cats")
+        assert pos3.word_index == 3  # Passed "cats"
+
+    def test_so_matches_when_in_script(self):
+        """'so' is a filler word but should match when in script."""
+        tracker = ScriptTracker("So what do you think")
+
+        pos = tracker.update("so what")
+        # "so" should match, not be skipped
+        assert pos.word_index == 2
+
+    def test_well_matches_when_in_script(self):
+        """'well' is a filler word but should match when in script."""
+        tracker = ScriptTracker("The well was deep")
+
+        pos1 = tracker.update("the")
+        assert pos1.word_index == 1
+
+        pos2 = tracker.update("the well")
+        # "well" should match "well" in the script
+        assert pos2.word_index == 2
+
+
 class TestFuzzyWordMatching:
     """Tests for fuzzy matching of individual words."""
 
@@ -481,13 +532,15 @@ class TestAlternativePunctuationMatching:
         assert pos_after > pos_before
 
     def test_slash_matches_forward_slash(self):
-        """'/' should match when spoken as 'forward slash'."""
+        """'/' should match when spoken as 'forward slash' (complete expansion)."""
         tracker = ScriptTracker("Press A / B to continue")
         tracker.update("press a")
         pos_before = tracker.optimistic_position
 
-        # Say "forward" for "/" (first word of "forward slash")
-        tracker.update("press a forward")
+        # Say "forward slash" for "/" (complete multi-word expansion)
+        # Note: With the new dynamic expansion model, position only advances
+        # when the complete expansion is spoken
+        tracker.update("press a forward slash")
         pos_after = tracker.optimistic_position
 
         assert pos_after > pos_before
@@ -839,3 +892,235 @@ class TestAlternativeNumberMatching:
 
         # Should have progressed through most of the script
         assert tracker.progress > 0.5
+
+
+class TestExpansionValidationBug:
+    """Tests for the bug where long expansions trigger false backtracks.
+
+    Bug scenario: When matching a multi-word expansion like "1500" -> "one thousand
+    five hundred", each word in the expansion is matched but positions_advanced
+    stays 0 until the expansion is complete. This can trigger validation which
+    incorrectly causes a backtrack.
+    """
+
+    def test_long_expansion_no_false_backtrack(self):
+        """Multi-word expansion should not trigger false backtrack during matching.
+
+        This reproduces the bug where:
+        - "and" matches and advances to position 78
+        - "one thousand five hundred" should match expansion at position 78
+        - But validation triggered mid-expansion and caused incorrect backtrack
+        """
+        # Script with a large number that has multi-word expansion
+        tracker = ScriptTracker("some text and 1500 large items")
+
+        # Advance to "and"
+        tracker.update("some text and")
+        pos_after_and = tracker.optimistic_position
+        high_water_after_and = tracker.high_water_mark
+
+        # Now simulate word-by-word expansion matching
+        # Each update represents a partial transcription update
+
+        # "one" - first word of expansion
+        result = tracker.update("some text and one")
+        assert result.is_backtrack is False, "First word of expansion should not cause backtrack"
+
+        # Check if validation triggered
+        if tracker.needs_validation:
+            validated_pos, was_backtrack = tracker.validate_position("some text and one")
+            assert was_backtrack is False, "Validation during expansion should not cause backtrack"
+
+        # "thousand" - second word of expansion
+        result = tracker.update("some text and one thousand")
+        assert result.is_backtrack is False, "Second word of expansion should not cause backtrack"
+
+        if tracker.needs_validation:
+            validated_pos, was_backtrack = tracker.validate_position("some text and one thousand")
+            assert was_backtrack is False, "Validation during expansion should not cause backtrack"
+
+        # "five" - third word of expansion
+        result = tracker.update("some text and one thousand five")
+        assert result.is_backtrack is False, "Third word of expansion should not cause backtrack"
+
+        if tracker.needs_validation:
+            validated_pos, was_backtrack = tracker.validate_position("some text and one thousand five")
+            assert was_backtrack is False, "Validation during expansion should not cause backtrack"
+
+        # "hundred" - fourth word of expansion (completes it)
+        result = tracker.update("some text and one thousand five hundred")
+        assert result.is_backtrack is False, "Completing expansion should not cause backtrack"
+
+        # Position should have advanced past "1500"
+        assert tracker.optimistic_position > pos_after_and, \
+            "Position should advance after expansion is complete"
+
+    def test_expansion_does_not_trigger_validation(self):
+        """During expansion matching, validation should not be triggered.
+
+        The bug was: when words_advanced == 0 (expansion not complete yet),
+        needs_validation was being set to True, triggering incorrect validation.
+        """
+        tracker = ScriptTracker("prefix 1500 suffix words here today")
+
+        # Advance to position before the number
+        tracker.update("prefix")
+        tracker.needs_validation = False
+
+        # Start expansion matching - position won't advance until complete
+        tracker.update("prefix one")
+
+        # Validation should NOT be triggered during active expansion
+        assert tracker.needs_validation is False or tracker.active_expansions, \
+            "Should not trigger validation while actively matching expansion"
+
+    def test_six_word_expansion_no_backtrack(self):
+        """Very long expansions (like 1,500,000) should not cause false backtrack.
+
+        "1,500,000" -> "one million five hundred thousand" is 5 words.
+        This exceeds the typical validation threshold of 5 words.
+        """
+        tracker = ScriptTracker("there are 1500000 items remaining")
+
+        tracker.update("there are")
+        initial_pos = tracker.optimistic_position
+
+        # Build up the expansion word by word
+        words = ["one", "million", "five", "hundred", "thousand"]
+        transcript = "there are"
+
+        for word in words:
+            transcript += f" {word}"
+            result = tracker.update(transcript)
+            assert result.is_backtrack is False, \
+                f"Should not backtrack after speaking '{word}' in expansion"
+
+        # After complete expansion, position should have advanced
+        assert tracker.optimistic_position > initial_pos
+
+
+class TestExpansionStateClearingOnPositionChange:
+    """Tests that expansion state is properly cleared when position changes.
+
+    Bug scenario: When a backtrack or jump occurs while in the middle of
+    matching an expansion (like "one million" for "1000000"), the expansion
+    state was not being cleared. This caused the tracker to continue trying
+    to match expansion words at the new position, leading to cascading
+    backtrack failures.
+    """
+
+    def test_expansion_state_cleared_on_jump_to(self):
+        """jump_to() should clear any in-progress expansion state."""
+        tracker = ScriptTracker("number 1000000 text here other words")
+
+        # Start matching expansion for 1000000
+        tracker.update("number")
+        tracker.update("number one")  # Start expansion
+
+        # Verify we're in an expansion
+        assert tracker.active_expansions, "Should be in expansion matching"
+
+        # Jump to a different position
+        tracker.jump_to(3)  # Jump to "here"
+
+        # Expansion state should be cleared
+        assert not tracker.active_expansions, \
+            "Expansion state should be cleared after jump_to()"
+        assert tracker.expansion_match_position == 0
+
+    def test_expansion_state_cleared_on_backtrack(self):
+        """Backtrack should clear any in-progress expansion state.
+
+        This was the bug: when backtracking while matching an expansion,
+        the expansion words would continue to be expected at the new position.
+
+        Since triggering an actual backtrack through validate_position is complex
+        (many conditions must be met), we test by directly simulating what the
+        backtrack code path does internally.
+        """
+        # Script: Words before a number, the number, then different words after
+        tracker = ScriptTracker("start text here 1000000 some different words after")
+
+        # Advance past "start text here" and start matching the number expansion
+        tracker.update("start text here")
+
+        # Start matching the number expansion "one million"
+        tracker.update("start text here one")
+
+        # Verify we're now in an expansion
+        assert tracker.active_expansions, "Should be in expansion matching"
+        expansion_was_active = len(tracker.active_expansions) > 0
+
+        # Simulate what the backtrack code does internally:
+        # These are the key state changes that happen in validate_position when
+        # is_backtrack is True (lines 819-826 in tracker.py)
+        new_position = 0  # Simulated backtrack to beginning
+        tracker.optimistic_position = new_position
+        tracker.current_word_index = new_position
+        tracker.high_water_mark = new_position
+        tracker.skip_disabled_count = 5
+        tracker._clear_expansion_state()  # This is the fix we added
+
+        # Verify expansion state is now cleared
+        assert expansion_was_active, "Test setup: expansion should have been active"
+        assert not tracker.active_expansions, \
+            "Expansion state should be cleared after backtrack"
+        assert tracker.expansion_match_position == 0
+
+    def test_words_match_correctly_after_expansion_cleared(self):
+        """After clearing expansion, subsequent words should match at new position."""
+        # Use simple words without numbers to avoid expansion matching complexity
+        tracker = ScriptTracker("apple 100 banana cherry grape melon")
+
+        # Start expansion for "100"
+        tracker.update("apple")
+        tracker.update("apple one")  # Start matching "one hundred" for "100"
+
+        # Verify in expansion
+        assert tracker.active_expansions
+
+        # Jump to "cherry" (position 3)
+        tracker.jump_to(3)
+
+        # Now try to match "cherry" - should work at the new position
+        tracker.last_transcription = ""  # Clear transcript for clean matching
+        result = tracker.update("cherry")
+
+        # Should match at position 3 and advance to 4
+        assert tracker.optimistic_position == 4
+        assert result.word_index == 4
+
+    def test_cascading_backtrack_prevented(self):
+        """Clearing expansion state should prevent cascading backtrack failures.
+
+        This reproduces the bug scenario from the debug log where:
+        1. Expansion matching started ("one million" for a number)
+        2. Backtrack occurred
+        3. Expansion words kept coming but didn't match the new position
+        4. Each mismatch triggered another backtrack, cascading failures
+        """
+        # Create a script similar to the bug scenario
+        # Speakable words: the(0) number(1) is(2) one(3) as(4) written(5) also(6) decimal(7) ...
+        script = "the number is 1000000 as written also decimal numbers are interesting"
+        tracker = ScriptTracker(script)
+
+        # Advance and start matching the number
+        tracker.update("the number is")
+        tracker.update("the number is one")  # Start expansion
+
+        # Record state before simulated backtrack
+        assert tracker.active_expansions, "Should be matching expansion"
+
+        # Simulate backtrack to "as written" (position after the number)
+        tracker.optimistic_position = 4  # Position of "as"
+        tracker.current_word_index = 4
+        tracker.high_water_mark = 4
+        tracker._clear_expansion_state()  # This is what the fix does
+
+        # Now subsequent words should match the new position, not cause cascading failures
+        tracker.last_transcription = ""
+        result = tracker.update("as written")
+
+        # Should successfully match "as" (pos 4) and "written" (pos 5), ending at 6
+        assert tracker.optimistic_position == 6  # Should be at position after "written"
+        assert not result.is_backtrack

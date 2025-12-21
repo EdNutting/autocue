@@ -39,6 +39,9 @@ PATTERNS = {
 
     # Mixed alphanumeric suffix: 4K, 100GB, 4.05GHz (number then letters)
     'suffix_mixed': re.compile(r'^(\d+(?:\.\d+)?)([A-Za-z]+)$'),
+
+    # Rate units: 100GB/s, 60fps, 1000MB/s (number + unit + "/" + unit)
+    'rate_unit': re.compile(r'^(\d+(?:\.\d+)?)([A-Za-z]+)/([A-Za-z]+)$'),
 }
 
 
@@ -427,8 +430,12 @@ def expand_mixed_alphanumeric(token: str) -> List[List[str]]:
         letters = prefix_match.group(1).lower()
         num_str = prefix_match.group(2)
 
-        # Spell out letters individually
-        letter_words = list(letters)
+        # Only spell out short prefixes (1-2 chars) like "M3", "V8"
+        # Keep longer prefixes as words like "word1" -> ["word", "one"]
+        if len(letters) <= 2:
+            letter_words = list(letters)
+        else:
+            letter_words = [letters]
 
         # Expand the number part
         num_expansions = _expand_number_part(num_str)
@@ -461,6 +468,47 @@ def expand_mixed_alphanumeric(token: str) -> List[List[str]]:
         return alternatives
 
     return []
+
+
+def expand_rate_unit(token: str) -> List[List[str]]:
+    """Expand rate unit tokens like 100GB/s, 60fps, 1000MB/s.
+
+    Args:
+        token: Rate unit token (e.g., "100GB/s", "1000MB/s")
+
+    Returns:
+        List of alternatives
+
+    Examples:
+        "100GB/s" -> [["one", "hundred", "g", "b", "per", "s"],
+                      ["one", "hundred", "gigabytes", "per", "second"]]
+    """
+    stripped = token.strip()
+    alternatives = []
+
+    rate_match = PATTERNS['rate_unit'].match(stripped)
+    if not rate_match:
+        return []
+
+    num_str = rate_match.group(1)
+    first_unit = rate_match.group(2)
+    second_unit = rate_match.group(3)
+
+    # Expand the number part
+    num_expansions = _expand_number_part(num_str)
+
+    # Expand both units
+    first_unit_expansions = _expand_unit_suffix(first_unit)
+    second_unit_expansions = _expand_unit_suffix(second_unit)
+
+    for num_exp in num_expansions:
+        for first_exp in first_unit_expansions:
+            for second_exp in second_unit_expansions:
+                alt = num_exp + first_exp + ['per'] + second_exp
+                if alt not in alternatives:
+                    alternatives.append(alt)
+
+    return alternatives
 
 
 def get_number_expansions(token: str) -> Optional[List[List[str]]]:
@@ -504,6 +552,10 @@ def get_number_expansions(token: str) -> Optional[List[List[str]]]:
     # Try mixed alphanumeric (prefix or suffix)
     if PATTERNS['prefix_mixed'].match(stripped) or PATTERNS['suffix_mixed'].match(stripped):
         return expand_mixed_alphanumeric(stripped)
+
+    # Try rate units (100GB/s, 1000MB/s)
+    if PATTERNS['rate_unit'].match(stripped):
+        return expand_rate_unit(stripped)
 
     return None
 

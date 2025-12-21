@@ -332,8 +332,8 @@ class TestParseScript:
             for speakable_idx in speakable_indices:
                 assert parsed.speakable_to_raw[speakable_idx] == raw_idx
 
-    def test_expansion_creates_multiple_speakable_words(self):
-        """Multi-word expansions should create multiple SpeakableWords."""
+    def test_expansion_creates_single_speakable_word_with_all_expansions(self):
+        """Expandable tokens create ONE SpeakableWord with all_expansions set."""
         import markdown
 
         script = "A < B"  # "<" expands to ["less", "than"]
@@ -342,11 +342,15 @@ class TestParseScript:
 
         # Find the speakable words from the "<" expansion
         expanded_words = [sw for sw in parsed.speakable_words if sw.is_expansion]
-        assert len(expanded_words) >= 2
+        # Now we create ONE position per expandable token
+        assert len(expanded_words) == 1
 
-        texts = [sw.text for sw in expanded_words]
-        assert "less" in texts
-        assert "than" in texts
+        # The single SpeakableWord should have all_expansions set
+        sw = expanded_words[0]
+        assert sw.all_expansions is not None
+        assert len(sw.all_expansions) >= 1
+        # First expansion should be ["less", "than"]
+        assert sw.all_expansions[0] == ["less", "than"]
 
 
 class TestSpeakableToRawIndex:

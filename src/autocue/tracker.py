@@ -13,8 +13,7 @@ import markdown
 from . import debug_log
 from .script_parser import (
     ParsedScript, parse_script, normalize_word,
-    speakable_to_raw_index, get_speakable_word_list,
-    get_all_expansions, strip_surrounding_punctuation
+    speakable_to_raw_index, get_speakable_word_list
 )
 
 logger = logging.getLogger(__name__)
@@ -58,7 +57,8 @@ class ScriptTracker:
         window_size: int = 8,
         match_threshold: float = 70.0,
         backtrack_threshold: int = 3,
-        max_jump_distance: int = 50
+        max_jump_distance: int = 50,
+        max_skip_distance: int = 2
     ):
         """
         Initialize the script tracker.
@@ -70,11 +70,14 @@ class ScriptTracker:
             backtrack_threshold: Minimum words back to count as backtrack
             max_jump_distance: Maximum words to jump in one validation (prevents
                 jumping to similar sentences far away in the script)
+            max_skip_distance: Maximum script words to skip when looking for a match
+                (prevents false matches when speaker deviates from script)
         """
         self.window_size = window_size
         self.match_threshold = match_threshold
         self.backtrack_threshold = backtrack_threshold
         self.max_jump_distance = max_jump_distance
+        self.max_skip_distance = max_skip_distance
 
         # Render markdown to HTML first
         rendered_html = markdown.markdown(
@@ -107,6 +110,11 @@ class ScriptTracker:
         # After backtrack, disable skip logic until we've matched a few words
         # This prevents old transcript words from incorrectly matching future positions
         self.skip_disabled_count = 0  # Number of words to disable skip for
+
+        # Dynamic expansion matching state
+        # When matching an expandable token, track which expansions are still valid
+        self.active_expansions: List[List[str]] = []  # Currently valid expansions
+        self.expansion_match_position = 0  # How many words matched in current expansion
 
     def _build_lines_from_text(self, text: str):
         """Build ScriptLine list and word_to_line mapping from raw text.
@@ -144,47 +152,95 @@ class ScriptTracker:
         """Convert speakable word index to raw token index for UI."""
         return speakable_to_raw_index(self.parsed_script, speakable_idx)
 
-    def _get_alternative_matches(self, speakable_idx: int) -> List[str]:
-        """Get all possible words that could match at this speakable position.
+    def _get_expansion_first_words(self, speakable_idx: int) -> List[str]:
+        """Get all possible FIRST words that could start matching at this position.
 
-        For punctuation/number expansions, returns the word at the corresponding
-        position from all alternative expansions.
-
-        For example, if the raw token "100" has expansions:
-          - ["one", "hundred"]
-          - ["a", "hundred"]
-          - ["one", "zero", "zero"]
-
-        At expansion_position=0, returns ["one", "a"]
-        At expansion_position=1, returns ["hundred", "zero"]
-        At expansion_position=2, returns ["zero"] (only the third expansion has this)
-
+        For expandable tokens, returns the first word of each possible expansion.
         For regular words, returns just that word.
+
+        Example for "100": returns ["one", "a"] (from "one hundred", "a hundred", "one zero zero")
         """
         if speakable_idx >= len(self.parsed_script.speakable_words):
             return []
 
         sw = self.parsed_script.speakable_words[speakable_idx]
 
-        # If this is an expansion, get all alternatives from the raw token
-        if sw.is_expansion:
-            raw_token = self.parsed_script.raw_tokens[sw.raw_token_index]
-            # Strip surrounding punctuation (e.g., "1100," -> "1100")
-            stripped_text = strip_surrounding_punctuation(raw_token.text)
-            expansions = get_all_expansions(stripped_text)
-            if expansions:
-                # Get the word at this expansion_position from each alternative
-                exp_pos = sw.expansion_position
-                alternatives = []
-                for exp in expansions:
-                    if exp_pos < len(exp):
-                        word = exp[exp_pos].lower()
-                        if word not in alternatives:
-                            alternatives.append(word)
-                return alternatives
+        if sw.is_expansion and sw.all_expansions:
+            # Get the first word from each expansion
+            first_words = []
+            for exp in sw.all_expansions:
+                if exp:
+                    word = exp[0].lower()
+                    if word not in first_words:
+                        first_words.append(word)
+            return first_words
 
         # For regular words, just return the word itself
         return [sw.text]
+
+    def _start_expansion_matching(self, speakable_idx: int) -> bool:
+        """Initialize expansion matching state for an expandable token.
+
+        Returns True if this is an expandable token with expansions.
+        """
+        if speakable_idx >= len(self.parsed_script.speakable_words):
+            return False
+
+        sw = self.parsed_script.speakable_words[speakable_idx]
+
+        if sw.is_expansion and sw.all_expansions:
+            self.active_expansions = [exp[:] for exp in sw.all_expansions]  # Copy
+            self.expansion_match_position = 0
+            return True
+
+        self.active_expansions = []
+        self.expansion_match_position = 0
+        return False
+
+    def _filter_expansions_by_word(self, spoken_word: str) -> bool:
+        """Filter active expansions to those matching the spoken word at current position.
+
+        Returns True if at least one expansion still matches.
+        """
+        if not self.active_expansions:
+            return False
+
+        spoken_norm = self._normalize_word(spoken_word)
+        if not spoken_norm:
+            return False
+
+        pos = self.expansion_match_position
+        remaining = []
+
+        for exp in self.active_expansions:
+            if pos < len(exp):
+                exp_word = exp[pos].lower()
+                # Check for exact or fuzzy match
+                if spoken_norm == exp_word or fuzz.ratio(spoken_norm, exp_word) >= 75:
+                    remaining.append(exp)
+
+        if remaining:
+            self.active_expansions = remaining
+            self.expansion_match_position += 1
+            return True
+
+        return False
+
+    def _is_expansion_complete(self) -> bool:
+        """Check if any active expansion has been fully matched."""
+        if not self.active_expansions:
+            return False
+
+        pos = self.expansion_match_position
+        for exp in self.active_expansions:
+            if pos >= len(exp):
+                return True
+        return False
+
+    def _clear_expansion_state(self):
+        """Clear the expansion matching state."""
+        self.active_expansions = []
+        self.expansion_match_position = 0
 
     def _get_window_text(self, start_index: int) -> str:
         """Get a window of words starting at the given index."""
@@ -211,22 +267,22 @@ class ScriptTracker:
         return fuzz.ratio(spoken_norm, script_norm) >= 75
 
     def _word_matches_at_position(self, spoken: str, speakable_idx: int) -> bool:
-        """Check if a spoken word matches any alternative at a speakable position.
+        """Check if a spoken word could START matching at a speakable position.
 
-        For punctuation expansions, checks against all possible spoken forms.
-        For example, "/" could match "slash", "or", or "forward".
+        For expandable tokens, checks if the word matches the first word
+        of any possible expansion. For regular words, checks direct match.
         """
         spoken_norm = self._normalize_word(spoken)
         if not spoken_norm:
             return False
 
-        alternatives = self._get_alternative_matches(speakable_idx)
-        for alt in alternatives:
+        first_words = self._get_expansion_first_words(speakable_idx)
+        for word in first_words:
             # Exact match
-            if spoken_norm == alt:
+            if spoken_norm == word:
                 return True
             # Fuzzy match
-            if fuzz.ratio(spoken_norm, alt) >= 75:
+            if fuzz.ratio(spoken_norm, word) >= 75:
                 return True
 
         return False
@@ -305,89 +361,185 @@ class ScriptTracker:
     def _advance_optimistically(self, new_words: List[str]) -> int:
         """
         Try to advance position based on new spoken words.
-        Allows skipping up to 2 script words to handle missed words.
-        Also skips filler words and repeated words in speech.
-        Returns the number of script words we advanced.
+
+        Uses dynamic expansion matching for numbers/punctuation:
+        - Tracks which expansions are still valid as words are matched
+        - Filters out expansions that don't match
+        - Advances position when an expansion is complete
+
+        Also skips filler words, repeated words, and allows skipping script words.
+        Returns the number of script positions we advanced.
         """
         if not new_words or self.optimistic_position >= len(self.words):
             return 0
 
-        words_advanced = 0
+        positions_advanced = 0
         pos = self.optimistic_position
         consecutive_misses = 0  # Track consecutive non-matching words
         max_consecutive_misses = 3  # Allow skipping up to 3 spoken words
         last_matched_spoken = None  # Track last matched word to detect repetitions
 
-        for spoken_word in new_words:
+        word_idx = 0
+        while word_idx < len(new_words):
             if pos >= len(self.words):
                 break
 
+            spoken_word = new_words[word_idx]
             spoken_norm = self._normalize_word(spoken_word)
 
             # Skip empty words
             if not spoken_norm:
+                word_idx += 1
                 continue
 
-            # Skip filler words entirely
+            # Skip filler words - but only if they DON'T match the current script position
+            # This prevents skipping "like" when the script actually says "like"
             if self._is_filler_word(spoken_word):
-                consecutive_misses = 0  # Filler words don't count as misses
-                debug_log.log_server_word(pos, f"[filler:{spoken_word}]", "skip_filler")
-                continue
+                # Check if this filler word matches the script at current position
+                if not self._word_matches_at_position(spoken_word, pos):
+                    consecutive_misses = 0  # Filler words don't count as misses
+                    debug_log.log_server_word(pos, f"[filler:{spoken_word}]", "skip_filler")
+                    word_idx += 1
+                    continue
+                # Otherwise, fall through and try to match normally
 
             # Skip repeated words (same word spoken twice in a row)
             if last_matched_spoken and spoken_norm == self._normalize_word(last_matched_spoken):
                 consecutive_misses = 0  # Repetitions don't count as misses
                 debug_log.log_server_word(pos, f"[repeat:{spoken_word}]", "skip_repeat")
+                word_idx += 1
                 continue
 
             matched = False
-
-            # Check if skip logic is disabled (after backtrack)
             skip_allowed = self.skip_disabled_count <= 0
 
-            # Try matching at current position (checks alternative expansions too)
-            if self._word_matches_at_position(spoken_word, pos):
-                debug_log.log_server_word(pos, self.words[pos], f"match \"{spoken_norm}\"")
-                pos += 1
-                words_advanced += 1
-                matched = True
-                last_matched_spoken = spoken_word
-                consecutive_misses = 0
-                # Decrement skip disable counter on successful match
-                if self.skip_disabled_count > 0:
-                    self.skip_disabled_count -= 1
-            # Try skipping 1 script word (speaker skipped a word)
-            # Only if skip logic is allowed (not recently backtracked)
-            elif skip_allowed and pos + 1 < len(self.words) and self._word_matches_at_position(spoken_word, pos + 1):
-                debug_log.log_server_word(pos, self.words[pos], "skip1_missed")
-                debug_log.log_server_word(pos + 1, self.words[pos + 1], f"skip1_match \"{spoken_norm}\"")
-                pos += 2  # Skip the missed word and advance past the matched one
-                words_advanced += 2
-                matched = True
-                last_matched_spoken = spoken_word
-                consecutive_misses = 0
-            # Try skipping 2 script words
-            elif skip_allowed and pos + 2 < len(self.words) and self._word_matches_at_position(spoken_word, pos + 2):
-                debug_log.log_server_word(pos, self.words[pos], "skip2_missed")
-                debug_log.log_server_word(pos + 1, self.words[pos + 1], "skip2_missed")
-                debug_log.log_server_word(pos + 2, self.words[pos + 2], f"skip2_match \"{spoken_norm}\"")
-                pos += 3
-                words_advanced += 3
-                matched = True
-                last_matched_spoken = spoken_word
-                consecutive_misses = 0
+            # Check if we're in the middle of matching an expansion
+            if self.active_expansions:
+                # Try to continue the current expansion
+                if self._filter_expansions_by_word(spoken_word):
+                    debug_log.log_server_word(
+                        pos, self.words[pos],
+                        f"exp_match \"{spoken_norm}\" pos={self.expansion_match_position} remaining={len(self.active_expansions)}"
+                    )
+                    matched = True
+                    last_matched_spoken = spoken_word
+                    consecutive_misses = 0
+                    word_idx += 1
+
+                    # Check if expansion is complete
+                    if self._is_expansion_complete():
+                        debug_log.log_server_word(pos, self.words[pos], "exp_complete")
+                        pos += 1
+                        positions_advanced += 1
+                        self._clear_expansion_state()
+                        if self.skip_disabled_count > 0:
+                            self.skip_disabled_count -= 1
+                else:
+                    # Word doesn't match any remaining expansion
+                    # The expansion ended early - advance position and try this word at next position
+                    debug_log.log_server_word(
+                        pos, self.words[pos],
+                        f"exp_ended \"{spoken_norm}\" (no match at pos {self.expansion_match_position})"
+                    )
+                    pos += 1
+                    positions_advanced += 1
+                    self._clear_expansion_state()
+                    if self.skip_disabled_count > 0:
+                        self.skip_disabled_count -= 1
+                    # Don't increment word_idx - try this word at the new position
+                    continue
+            else:
+                # Not in an expansion - try to start one or match normally
+                sw = self.parsed_script.speakable_words[pos] if pos < len(self.parsed_script.speakable_words) else None
+
+                if sw and sw.is_expansion and sw.all_expansions:
+                    # This is an expandable token - start expansion matching
+                    self._start_expansion_matching(pos)
+                    if self._filter_expansions_by_word(spoken_word):
+                        debug_log.log_server_word(
+                            pos, self.words[pos],
+                            f"exp_start \"{spoken_norm}\" remaining={len(self.active_expansions)}"
+                        )
+                        matched = True
+                        last_matched_spoken = spoken_word
+                        consecutive_misses = 0
+                        word_idx += 1
+
+                        # Check if single-word expansion is complete
+                        if self._is_expansion_complete():
+                            debug_log.log_server_word(pos, self.words[pos], "exp_complete_1word")
+                            pos += 1
+                            positions_advanced += 1
+                            self._clear_expansion_state()
+                            if self.skip_disabled_count > 0:
+                                self.skip_disabled_count -= 1
+                    else:
+                        # First word doesn't match any expansion - clear and fall through
+                        self._clear_expansion_state()
+                else:
+                    # Regular word - try direct matching
+                    if self._word_matches_at_position(spoken_word, pos):
+                        debug_log.log_server_word(pos, self.words[pos], f"match \"{spoken_norm}\"")
+                        pos += 1
+                        positions_advanced += 1
+                        matched = True
+                        last_matched_spoken = spoken_word
+                        consecutive_misses = 0
+                        word_idx += 1
+                        if self.skip_disabled_count > 0:
+                            self.skip_disabled_count -= 1
+
+                # Try skipping script words if no match yet (up to max_skip_distance)
+                if not matched and skip_allowed:
+                    for skip_count in range(1, self.max_skip_distance + 1):
+                        skip_pos = pos + skip_count
+                        if skip_pos >= len(self.words):
+                            break
+                        if self._word_matches_at_position(spoken_word, skip_pos):
+                            # Log skipped words
+                            for i in range(skip_count):
+                                debug_log.log_server_word(
+                                    pos + i, self.words[pos + i], f"skip{skip_count}_missed"
+                                )
+                            debug_log.log_server_word(
+                                skip_pos, self.words[skip_pos], f"skip{skip_count}_match \"{spoken_norm}\""
+                            )
+                            # Check if the skipped-to position starts an expansion
+                            sw_skip = self.parsed_script.speakable_words[skip_pos] \
+                                if skip_pos < len(self.parsed_script.speakable_words) else None
+                            if sw_skip and sw_skip.is_expansion and sw_skip.all_expansions:
+                                self._start_expansion_matching(skip_pos)
+                                self._filter_expansions_by_word(spoken_word)
+                                if self._is_expansion_complete():
+                                    pos = skip_pos + 1
+                                    positions_advanced += skip_count + 1
+                                    self._clear_expansion_state()
+                                else:
+                                    pos = skip_pos
+                                    positions_advanced += skip_count
+                            else:
+                                pos = skip_pos + 1
+                                positions_advanced += skip_count + 1
+                            matched = True
+                            last_matched_spoken = spoken_word
+                            consecutive_misses = 0
+                            word_idx += 1
+                            break
 
             if not matched:
-                # Word doesn't match - but don't immediately give up
-                # Allow skipping a few spoken words (could be speech errors)
+                # Word doesn't match - continue trying subsequent words
+                # Don't break early - process all words to behave same as word-by-word updates
                 consecutive_misses += 1
-                debug_log.log_server_word(pos, self.words[pos] if pos < len(self.words) else "?",
-                                          f"no_match \"{spoken_norm}\" miss#{consecutive_misses}")
+                debug_log.log_server_word(
+                    pos, self.words[pos] if pos < len(self.words) else "?",
+                    f"no_match \"{spoken_norm}\" miss#{consecutive_misses}"
+                )
+                word_idx += 1
+                # Reset consecutive misses after a while to allow recovery
                 if consecutive_misses >= max_consecutive_misses:
-                    # Too many consecutive misses - stop and wait for validation
-                    break
+                    consecutive_misses = 0
 
-        return words_advanced
+        return positions_advanced
         
     def _find_best_match(self, spoken_words: str) -> Tuple[int, float]:
         """
@@ -520,6 +672,12 @@ class ScriptTracker:
 
             # Sync current_word_index with optimistic for display
             self.current_word_index = self.optimistic_position
+        elif self.active_expansions:
+            # We're in the middle of matching a multi-word expansion (e.g., "1500" ->
+            # "one thousand five hundred"). The position won't advance until the
+            # expansion is complete. Don't trigger validation - trust the expansion
+            # matching process.
+            pass
         else:
             # No words matched - this could indicate a backtrack or forward jump!
             # Immediately validate if we have enough new words to work with
@@ -664,6 +822,8 @@ class ScriptTracker:
             self.last_transcription = transcription  # Keep transcript to continue from here
             # Disable skip logic for next 5 words to prevent matching old transcript remnants
             self.skip_disabled_count = 5
+            # Clear expansion state - we're at a new position, any in-progress expansion is invalid
+            self._clear_expansion_state()
             return adjusted_position, True
 
         # Check for forward jump - user skipped ahead in the script
@@ -702,6 +862,8 @@ class ScriptTracker:
             self.last_transcription = transcription
             # Disable skip logic for next 5 words to prevent matching old transcript remnants
             self.skip_disabled_count = 5
+            # Clear expansion state - we're at a new position, any in-progress expansion is invalid
+            self._clear_expansion_state()
             # Return True for is_backtrack to trigger UI update (it's really a "jump")
             return adjusted_position, True
 
@@ -721,6 +883,8 @@ class ScriptTracker:
             self.optimistic_position = adjusted_position
             self.current_word_index = adjusted_position
             self.last_transcription = transcription
+            # Clear expansion state - we're at a new position, any in-progress expansion is invalid
+            self._clear_expansion_state()
 
         elif position_diff < -5:
             # Optimistic fell behind - catch up
@@ -738,6 +902,8 @@ class ScriptTracker:
             self.current_word_index = adjusted_position
             self.high_water_mark = max(self.high_water_mark, adjusted_position)
             self.last_transcription = transcription
+            # Clear expansion state - we're at a new position, any in-progress expansion is invalid
+            self._clear_expansion_state()
 
         return self.optimistic_position, False
         
@@ -768,6 +934,8 @@ class ScriptTracker:
         self.words_since_validation = 0
         self.needs_validation = False
         self.skip_disabled_count = 0
+        # Reset expansion state
+        self._clear_expansion_state()
 
     def jump_to(self, word_index: int):
         """Jump to a specific position in the script."""
@@ -781,7 +949,9 @@ class ScriptTracker:
         self.words_since_validation = 0
         self.needs_validation = False
         self.skip_disabled_count = 0
-        
+        # Clear expansion state - we're at a new position, any in-progress expansion is invalid
+        self._clear_expansion_state()
+
     def get_display_lines(
         self,
         past_lines: int = 1,

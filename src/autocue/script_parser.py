@@ -61,16 +61,22 @@ class RawToken:
 
 @dataclass
 class SpeakableWord:
-    """A word as it would be spoken."""
+    """A word as it would be spoken.
+
+    For expandable tokens (numbers, punctuation), this represents the ENTIRE token
+    with a single position. The tracker handles matching variable-length expansions
+    dynamically by filtering possible expansions as words are spoken.
+    """
     text: str  # The spoken/normalized form (e.g., "and" for "&", "dont" for "don't")
     raw_token_index: int  # Maps back to the RawToken that produced this
-    is_expansion: bool = False  # True if from punctuation expansion
-    # For multi-word expansions, which word (0-indexed)
-    expansion_position: int = 0
+    is_expansion: bool = False  # True if this is an expandable token (number/punctuation)
+    # For expandable tokens, store all possible expansions for dynamic matching
+    all_expansions: Optional[List[List[str]]] = None
 
     def __repr__(self) -> str:
-        exp = f" exp[{self.expansion_position}]" if self.is_expansion else ""
-        return f"SpeakableWord('{self.text}' -> raw[{self.raw_token_index}]{exp})"
+        if self.is_expansion and self.all_expansions:
+            return f"SpeakableWord('{self.text}' -> raw[{self.raw_token_index}] expansions={len(self.all_expansions)})"
+        return f"SpeakableWord('{self.text}' -> raw[{self.raw_token_index}])"
 
 
 @dataclass
@@ -267,38 +273,34 @@ def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript
         stripped_token = strip_surrounding_punctuation(token)
 
         if expansion:
-            # Token expands to one or more spoken words
-            for exp_pos, exp_word in enumerate(expansion):
+            # Punctuation token - create ONE speakable word with all expansions
+            # Get all possible expansions for dynamic matching
+            all_exps = get_all_expansions(token)
+            sw = SpeakableWord(
+                text=expansion[0].lower(),  # Primary first word for display
+                raw_token_index=raw_index,
+                is_expansion=True,
+                all_expansions=all_exps
+            )
+            speakable_words.append(sw)
+            raw_to_speakable[raw_index].append(speakable_index)
+            speakable_to_raw[speakable_index] = raw_index
+            speakable_index += 1
+        elif is_number_token(stripped_token):
+            # Number token - create ONE speakable word with all expansions
+            # The tracker handles matching variable-length expansions dynamically
+            number_expansions = get_number_expansions(stripped_token)
+            if number_expansions:
                 sw = SpeakableWord(
-                    text=exp_word.lower(),
+                    text=number_expansions[0][0].lower(),  # Primary first word
                     raw_token_index=raw_index,
                     is_expansion=True,
-                    expansion_position=exp_pos
+                    all_expansions=number_expansions
                 )
                 speakable_words.append(sw)
                 raw_to_speakable[raw_index].append(speakable_index)
                 speakable_to_raw[speakable_index] = raw_index
                 speakable_index += 1
-        elif is_number_token(stripped_token):
-            # Number token - expand using the LONGEST expansion
-            # This ensures all alternative pronunciations can be matched
-            # e.g., "100" -> ["one", "hundred"] (2 words) vs ["one", "zero", "zero"] (3 words)
-            # We need 3 speakable positions to match both alternatives
-            number_expansions = get_number_expansions(stripped_token)
-            if number_expansions:
-                # Find the longest expansion
-                longest_expansion = max(number_expansions, key=len)
-                for exp_pos, exp_word in enumerate(longest_expansion):
-                    sw = SpeakableWord(
-                        text=exp_word.lower(),
-                        raw_token_index=raw_index,
-                        is_expansion=True,
-                        expansion_position=exp_pos
-                    )
-                    speakable_words.append(sw)
-                    raw_to_speakable[raw_index].append(speakable_index)
-                    speakable_to_raw[speakable_index] = raw_index
-                    speakable_index += 1
             else:
                 # Fallback: treat as normal word (shouldn't happen)
                 normalized = normalize_word(token)
@@ -306,8 +308,7 @@ def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript
                     sw = SpeakableWord(
                         text=normalized,
                         raw_token_index=raw_index,
-                        is_expansion=False,
-                        expansion_position=0
+                        is_expansion=False
                     )
                     speakable_words.append(sw)
                     raw_to_speakable[raw_index].append(speakable_index)
@@ -324,8 +325,7 @@ def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript
                 sw = SpeakableWord(
                     text=normalized,
                     raw_token_index=raw_index,
-                    is_expansion=False,
-                    expansion_position=0
+                    is_expansion=False
                 )
                 speakable_words.append(sw)
                 raw_to_speakable[raw_index].append(speakable_index)

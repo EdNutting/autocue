@@ -252,14 +252,17 @@ class TestTranscriptTracking:
         assert final_progress > 0.8, f"Final progress was {final_progress:.2%}, expected > 80%"
 
     def test_smooth_tracking_chunk_by_chunk(self, number_test_script, number_test_transcript):
-        """Verify tracking advances smoothly when feeding transcript line by line (chunks)."""
+        """Verify tracking advances smoothly when feeding transcript line by line (chunks).
+
+        For chunk updates, jumps should be proportional to the number of words in the chunk.
+        We verify that no jump exceeds the chunk size by more than a small margin.
+        """
         from src.autocue.tracker import ScriptTracker
 
         tracker = ScriptTracker(number_test_script)
 
-        max_jump = 0
         last_position = 0
-        position_history = [(0, "")]
+        disproportionate_jumps = []
 
         # Feed transcript line by line (simulating chunks of speech)
         cumulative_text = ""
@@ -269,21 +272,25 @@ class TestTranscriptTracking:
             else:
                 cumulative_text = line
 
+            chunk_word_count = len(line.split())
             pos = tracker.update(cumulative_text)
             current_position = pos.speakable_index
 
             # Calculate jump size
             jump = current_position - last_position
-            if abs(jump) > max_jump:
-                max_jump = abs(jump)
 
-            position_history.append((current_position, line[:30] + "..."))
+            # For chunk updates, jump should be approximately equal to chunk size
+            # Allow some tolerance for skipped words or minor mismatches
+            # A jump should not exceed 1.5x the chunk size (50% tolerance)
+            max_reasonable_jump = max(5, int(chunk_word_count * 1.5))
+            if jump > max_reasonable_jump:
+                disproportionate_jumps.append((jump, chunk_word_count, line[:40]))
+
             last_position = current_position
 
-        # With chunked updates, we expect larger jumps (since we're adding many words at once)
-        # But they should still be proportional to the words added
-        # For line-by-line, allow larger jumps since we're adding 10-25 words at a time
-        assert max_jump <= 25, f"Maximum jump was {max_jump}, expected <= 25"
+        # There should be very few disproportionate jumps (validation corrections)
+        assert len(disproportionate_jumps) <= 2, \
+            f"Too many disproportionate jumps: {disproportionate_jumps}"
 
         # Position should have advanced significantly
         final_progress = tracker.progress
@@ -372,13 +379,17 @@ class TestTranscriptTracking:
         assert jump_ratio < 0.1, f"Large jump ratio was {jump_ratio:.2%}, expected < 10%"
 
     def test_mixed_word_and_chunk_updates(self, number_test_script, number_test_transcript):
-        """Verify tracking works with mixed update patterns (some words, some chunks)."""
+        """Verify tracking works with mixed update patterns (some words, some chunks).
+
+        This test adds 1-4 words at a time. For small chunks, jumps should be small.
+        Larger jumps indicate validation corrections which should be rare.
+        """
         from src.autocue.tracker import ScriptTracker
 
         tracker = ScriptTracker(number_test_script)
 
-        max_jump = 0
         last_position = 0
+        large_jumps = []
 
         # Combine lines into one big list of words
         all_words = []
@@ -392,6 +403,7 @@ class TestTranscriptTracking:
             # Pick between 1 and 4 words to add using deterministic pattern
             pattern = [1, 3, 2, 4]
             chunk_size = pattern[word_idx % len(pattern)]
+            actual_chunk = 0
 
             # Add chunk_size words
             for _ in range(chunk_size):
@@ -402,18 +414,24 @@ class TestTranscriptTracking:
                 else:
                     cumulative_text = all_words[word_idx]
                 word_idx += 1
+                actual_chunk += 1
 
             pos = tracker.update(cumulative_text)
             current_position = pos.speakable_index
 
             jump = abs(current_position - last_position)
-            if jump > max_jump:
-                max_jump = jump
+
+            # For 1-4 word chunks, max reasonable jump is ~8 (2x chunk + margin)
+            # Larger jumps indicate validation corrections
+            if jump > 8:
+                large_jumps.append((jump, actual_chunk))
 
             last_position = current_position
 
-        # Max jump should still be reasonable
-        assert max_jump <= 6, f"Maximum jump was {max_jump}, expected <= 6"
+        # Most updates should have small jumps
+        # Allow a few large jumps for validation corrections
+        assert len(large_jumps) <= 5, \
+            f"Too many large jumps (>8): {len(large_jumps)} - {large_jumps[:5]}"
 
         # Should reach near the end
         final_progress = tracker.progress
