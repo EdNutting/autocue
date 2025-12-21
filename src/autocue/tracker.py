@@ -14,7 +14,7 @@ from . import debug_log
 from .script_parser import (
     ParsedScript, parse_script, normalize_word,
     speakable_to_raw_index, get_speakable_word_list,
-    get_all_expansions
+    get_all_expansions, strip_surrounding_punctuation
 )
 
 logger = logging.getLogger(__name__)
@@ -145,10 +145,20 @@ class ScriptTracker:
         return speakable_to_raw_index(self.parsed_script, speakable_idx)
 
     def _get_alternative_matches(self, speakable_idx: int) -> List[str]:
-        """Get all possible first words that could match at this speakable position.
+        """Get all possible words that could match at this speakable position.
 
-        For punctuation expansions (like "/" which can be "slash", "or", or "forward slash"),
-        returns all the first words of each alternative expansion.
+        For punctuation/number expansions, returns the word at the corresponding
+        position from all alternative expansions.
+
+        For example, if the raw token "100" has expansions:
+          - ["one", "hundred"]
+          - ["a", "hundred"]
+          - ["one", "zero", "zero"]
+
+        At expansion_position=0, returns ["one", "a"]
+        At expansion_position=1, returns ["hundred", "zero"]
+        At expansion_position=2, returns ["zero"] (only the third expansion has this)
+
         For regular words, returns just that word.
         """
         if speakable_idx >= len(self.parsed_script.speakable_words):
@@ -159,10 +169,19 @@ class ScriptTracker:
         # If this is an expansion, get all alternatives from the raw token
         if sw.is_expansion:
             raw_token = self.parsed_script.raw_tokens[sw.raw_token_index]
-            expansions = get_all_expansions(raw_token.text)
+            # Strip surrounding punctuation (e.g., "1100," -> "1100")
+            stripped_text = strip_surrounding_punctuation(raw_token.text)
+            expansions = get_all_expansions(stripped_text)
             if expansions:
-                # Return first word of each alternative expansion
-                return [exp[0].lower() for exp in expansions]
+                # Get the word at this expansion_position from each alternative
+                exp_pos = sw.expansion_position
+                alternatives = []
+                for exp in expansions:
+                    if exp_pos < len(exp):
+                        word = exp[exp_pos].lower()
+                        if word not in alternatives:
+                            alternatives.append(word)
+                return alternatives
 
         # For regular words, just return the word itself
         return [sw.text]

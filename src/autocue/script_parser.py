@@ -110,6 +110,28 @@ def normalize_word(word: str) -> str:
     return re.sub(r'[^\w\s]', '', word.lower()).strip()
 
 
+def strip_surrounding_punctuation(token: str) -> str:
+    """Strip leading and trailing punctuation from a token.
+
+    This preserves internal punctuation (like commas in "1,000" or periods in "3.14")
+    but removes surrounding quotes, commas, periods, etc.
+
+    Examples:
+        "1100," -> "1100"
+        '"hello"' -> "hello"
+        "100." -> "100"
+        "1,000" -> "1,000" (comma preserved - it's internal)
+        "3.14" -> "3.14" (period preserved - it's internal)
+    """
+    # Strip leading punctuation (quotes, brackets, etc.)
+    while token and token[0] in '"\'"([{<':
+        token = token[1:]
+    # Strip trailing punctuation (quotes, commas, periods, brackets, etc.)
+    while token and token[-1] in '"\'".,;:!?)]}>\'"':
+        token = token[:-1]
+    return token
+
+
 def should_expand_punctuation(token: str) -> Optional[List[str]]:
     """Check if a token should be expanded to spoken words.
 
@@ -240,6 +262,10 @@ def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript
         # Check for punctuation expansion
         expansion = should_expand_punctuation(token)
 
+        # Strip surrounding punctuation for number detection
+        # e.g., "1100," -> "1100", '"100"' -> "100"
+        stripped_token = strip_surrounding_punctuation(token)
+
         if expansion:
             # Token expands to one or more spoken words
             for exp_pos, exp_word in enumerate(expansion):
@@ -253,12 +279,16 @@ def parse_script(text: str, rendered_html: Optional[str] = None) -> ParsedScript
                 raw_to_speakable[raw_index].append(speakable_index)
                 speakable_to_raw[speakable_index] = raw_index
                 speakable_index += 1
-        elif is_number_token(token):
-            # Number token - expand using primary (first) expansion
-            number_expansions = get_number_expansions(token)
+        elif is_number_token(stripped_token):
+            # Number token - expand using the LONGEST expansion
+            # This ensures all alternative pronunciations can be matched
+            # e.g., "100" -> ["one", "hundred"] (2 words) vs ["one", "zero", "zero"] (3 words)
+            # We need 3 speakable positions to match both alternatives
+            number_expansions = get_number_expansions(stripped_token)
             if number_expansions:
-                primary_expansion = number_expansions[0]
-                for exp_pos, exp_word in enumerate(primary_expansion):
+                # Find the longest expansion
+                longest_expansion = max(number_expansions, key=len)
+                for exp_pos, exp_word in enumerate(longest_expansion):
                     sw = SpeakableWord(
                         text=exp_word.lower(),
                         raw_token_index=raw_index,

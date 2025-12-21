@@ -203,7 +203,12 @@ class TestTranscriptTracking:
         assert "Number Expansion Test Script" in number_test_script
 
     def test_smooth_tracking_word_by_word(self, number_test_script, number_test_transcript):
-        """Verify tracking advances smoothly when feeding words one at a time."""
+        """Verify tracking advances smoothly when feeding words one at a time.
+
+        The tracking system should handle number format differences between
+        transcription and script (e.g., "one hundred" vs "100") and advance
+        smoothly through the script.
+        """
         from src.autocue.tracker import ScriptTracker
 
         tracker = ScriptTracker(number_test_script)
@@ -277,8 +282,8 @@ class TestTranscriptTracking:
 
         # With chunked updates, we expect larger jumps (since we're adding many words at once)
         # But they should still be proportional to the words added
-        # For line-by-line, allow larger jumps since we're adding 5-15 words at a time
-        assert max_jump <= 20, f"Maximum jump was {max_jump}, expected <= 20"
+        # For line-by-line, allow larger jumps since we're adding 10-25 words at a time
+        assert max_jump <= 25, f"Maximum jump was {max_jump}, expected <= 25"
 
         # Position should have advanced significantly
         final_progress = tracker.progress
