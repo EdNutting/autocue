@@ -281,16 +281,15 @@ class AutocueApp:
                         future_lines=self.server.settings.get("futureLines", 8)
                     )
 
-                    # Only send update if position has actually changed or it's a backtrack
+                    # Only send update if position has actually changed
                     position_changed: bool = (
                         position.word_index != self._last_sent_word_index or
                         position.line_index != self._last_sent_line_index or
                         word_offset != self._last_sent_word_offset
                     )
 
-                    # Send update if position changed OR if we have partial transcript to show
-                    if position_changed or result.is_partial:
-
+                    # Send update only when position changes
+                    if position_changed:
                         # Send update to clients
                         await self.server.send_position(
                             word_index=position.word_index,
@@ -301,11 +300,10 @@ class AutocueApp:
                             transcript=result.text if result.is_partial else ""
                         )
 
-                        # Update last sent position (only if it actually changed)
-                        if position_changed:
-                            self._last_sent_word_index = position.word_index
-                            self._last_sent_line_index = position.line_index
-                            self._last_sent_word_offset = word_offset
+                        # Update last sent position
+                        self._last_sent_word_index = position.word_index
+                        self._last_sent_line_index = position.line_index
+                        self._last_sent_word_offset = word_offset
 
             # Small sleep to prevent CPU spinning
             await asyncio.sleep(0.01)
