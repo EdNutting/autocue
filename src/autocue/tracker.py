@@ -23,6 +23,24 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class TrackingState:
+    """Encapsulates the state needed for tracking progress through the script."""
+    optimistic_position: int = 0
+    word_queue: list[str] = field(default_factory=list)
+    last_matched_spoken: str | None = None
+    expansion_matcher: 'ExpansionMatcher | None' = None
+
+    def clone(self) -> 'TrackingState':
+        """Create a deep copy of this tracking state."""
+        return TrackingState(
+            optimistic_position=self.optimistic_position,
+            word_queue=self.word_queue.copy(),
+            last_matched_spoken=self.last_matched_spoken,
+            expansion_matcher=self.expansion_matcher.clone() if self.expansion_matcher else None
+        )
+
+
+@dataclass
 class ScriptPosition:
     """Represents the current position in the script."""
     word_index: int  # Index of current word in script (raw token index for UI)
@@ -82,12 +100,14 @@ class ScriptTracker:
     word_to_line: list[int]
 
     current_word_index: int
-    word_queue: list[str]
-    last_matched_spoken: str | None
-
-    optimistic_position: int
     last_transcription: str
     words_since_validation: int
+
+    # Two-state system for handling partials
+    committed_state: TrackingState
+    committed_display_position: int
+    speculative_display_position: int
+    last_partial_transcription: str
 
     _expansion_matcher: ExpansionMatcher
 
@@ -139,16 +159,27 @@ class ScriptTracker:
 
         # Tracking state (all indices are speakable word indices)
         self.current_word_index = 0
-        self.word_queue = []
-        self.last_matched_spoken = None
-
-        # Optimistic tracking state
-        self.optimistic_position = 0  # Fast-path position for immediate UI updates
         self.last_transcription = ""  # Track previous transcript to detect new words
         self.words_since_validation = 0  # Counter for validation triggering
 
         # Dynamic expansion matching (handles numbers/punctuation alternatives)
         self._expansion_matcher = ExpansionMatcher(self.parsed_script)
+
+        # Two-state system: committed (from finals) and speculative (from partials)
+        # Committed state - only updated by final transcripts
+        self.committed_state = TrackingState(
+            optimistic_position=0,
+            word_queue=[],
+            last_matched_spoken=None,
+            expansion_matcher=self._expansion_matcher.clone()
+        )
+
+        # Display positions
+        self.committed_display_position: int = 0
+        self.speculative_display_position: int = 0
+
+        # Track last partial to avoid reprocessing
+        self.last_partial_transcription: str = ""
 
     # Property accessors for expansion state (delegated to ExpansionMatcher)
     @property
@@ -287,6 +318,11 @@ class ScriptTracker:
         1. Optimistic: Advance word-by-word for immediate UI response
         2. Validation: Triggered to catch errors/backtracks
 
+        Handles partial results by:
+        - Detecting when previous words have been corrected
+        - Rewinding when corrections affect already-matched words
+        - Processing new words optimistically for speed
+
         Args:
             transcription: The transcribed text
             is_partial: True if this is a partial (in-progress) result
@@ -294,30 +330,119 @@ class ScriptTracker:
         Returns:
             Updated ScriptPosition (uses optimistic position for responsiveness)
         """
-        if is_partial:
-            return self.current_position
-
         transcription = transcription.strip()
         if not transcription:
             return self.current_position
 
+        if is_partial:
+            return self._update_partial(transcription)
+        else:
+            return self._update_final(transcription)
+
+    def _update_partial(self, transcription: str) -> ScriptPosition:
+        """
+        Update position based on partial transcription result.
+
+        Runs matching from committed state with partial words as a speculative "what if".
+        Committed state is untouched - only speculative display position is updated.
+        """
+        # Skip if same as last partial (avoid reprocessing)
+        if transcription == self.last_partial_transcription:
+            return self.current_position
+
+        print(f"Partial: Processing '{transcription}'")
+
+        # Clone committed state for speculative matching
+        speculative_state = self.committed_state.clone()
+
+        # Add all words from the partial transcript to speculative state
+        partial_words = [w for w in transcription.split() if w.strip()]
+        print(f"Partial: Queuing {len(partial_words)} words from partial")
+        for word in partial_words:
+            speculative_state.word_queue.append(word)
+
+        # Sync expansion matcher for speculative processing
+        if speculative_state.expansion_matcher:
+            self._expansion_matcher = speculative_state.expansion_matcher
+
+        # Process words speculatively
+        self._process_words(speculative_state)
+
+        # Update speculative display position (never goes backwards)
+        if speculative_state.optimistic_position > self.speculative_display_position:
+            print(
+                f"Partial: Advancing speculative position from {self.speculative_display_position} to {speculative_state.optimistic_position}")
+            self.speculative_display_position = speculative_state.optimistic_position
+
+        # Restore committed state expansion matcher
+        if self.committed_state.expansion_matcher:
+            self._expansion_matcher = self.committed_state.expansion_matcher
+
+        # Update current_word_index to chosen display position
+        self.current_word_index = max(
+            self.committed_display_position, self.speculative_display_position)
+
+        # Remember this partial
+        self.last_partial_transcription = transcription
+
+        return self.current_position
+
+    def _update_final(self, transcription: str) -> ScriptPosition:
+        """
+        Update position based on final transcription result.
+
+        Updates committed state and clears speculative state.
+        """
+        print(f"Final: Processing '{transcription}'")
+
         # Extract only the NEW words from the transcription
         new_words: list[str] = self.extract_new_words(transcription)
         if not new_words:
+            self.last_transcription = transcription
+            # Clear speculative state even if no new words
+            self.speculative_display_position = self.committed_display_position
+            self.last_partial_transcription = ""
             return self.current_position
 
         print("-------------------------------------------")
-        print(f"Tracker: Word queue '{' '.join(self.word_queue)}'")
+        print(
+            f"Tracker: Word queue '{' '.join(self.committed_state.word_queue)}'")
         print(f"Tracker: New words '{' '.join(new_words)}'")
         for word in new_words:
-            self.word_queue.append(word)
+            self.committed_state.word_queue.append(word)
         print(
-            f"Tracker: Updated word queue '{' '.join(self.word_queue)}'")
+            f"Tracker: Updated word queue '{' '.join(self.committed_state.word_queue)}'")
+
+        # Sync expansion matcher
+        if self.committed_state.expansion_matcher:
+            self._expansion_matcher = self.committed_state.expansion_matcher
+
+        # Process words on committed state
+        self._process_words(self.committed_state)
+
+        # Clear any remaining unmatched words - user paused, so we discard leftovers
+        # This helps the system resync and avoids carrying forward words that didn't match
+        if self.committed_state.word_queue:
+            print(f"Final: Discarding {len(self.committed_state.word_queue)} unmatched words from queue")
+            self.committed_state.word_queue.clear()
+
+        # Update committed display position
+        print(
+            f"Final({'→' if self.committed_display_position < self.committed_state.optimistic_position else '←'}): Moving committed position from {self.committed_display_position} to {self.committed_state.optimistic_position}")
+        self.committed_display_position = self.committed_state.optimistic_position
+
+        # Update expansion matcher in committed state
+        self.committed_state.expansion_matcher = self._expansion_matcher.clone()
+
+        # Clear speculative state (will be rebuilt from next partial)
+        self.speculative_display_position = self.committed_display_position
+        self.last_partial_transcription = ""
+
+        # Update current_word_index to committed display position
+        self.current_word_index = self.committed_display_position
 
         # Store transcription for next comparison
         self.last_transcription = transcription
-
-        self._process_words()
 
         return self.current_position
 
@@ -325,12 +450,19 @@ class ScriptTracker:
         """Reset tracking to the beginning of the script."""
         # Reset tracking state
         self.current_word_index = 0
-        self.word_queue = []
-        self.last_matched_spoken = None
-        # Reset optimistic state
-        self.optimistic_position = 0
         self.last_transcription = ""
         self.words_since_validation = 0
+        # Reset committed state
+        self.committed_state = TrackingState(
+            optimistic_position=0,
+            word_queue=[],
+            last_matched_spoken=None,
+            expansion_matcher=self._expansion_matcher.clone()
+        )
+        # Reset display positions
+        self.committed_display_position = 0
+        self.speculative_display_position = 0
+        self.last_partial_transcription = ""
         # Reset expansion state
         self.clear_expansion_state()
 
@@ -342,7 +474,9 @@ class ScriptTracker:
         self.reset()
 
         self.current_word_index = word_index
-        self.optimistic_position = word_index
+        self.committed_state.optimistic_position = word_index
+        self.committed_display_position = word_index
+        self.speculative_display_position = word_index
 
     def get_display_lines(
         self,
@@ -377,49 +511,44 @@ class ScriptTracker:
 
         return display_lines, current_in_display, word_offset
 
-    def _process_words(self) -> None:
-        previous_length = len(self.word_queue) + 1
-        while bool(self.word_queue) and previous_length > len(self.word_queue):
-            previous_length = len(self.word_queue)
+    def _process_words(self, state: TrackingState) -> None:
+        """Process words in the queue against the script, updating the state."""
+        previous_length = len(state.word_queue) + 1
+        while bool(state.word_queue) and previous_length > len(state.word_queue):
+            previous_length = len(state.word_queue)
 
             # Try to advance optimistically based on new words
-            spoken_word = self.word_queue.pop(0)
+            spoken_word = state.word_queue.pop(0)
             print(f"Exact-match detection: Testing word '{spoken_word}'")
-            match_result = self._match_single_word(spoken_word)
+            match_result = self._match_single_word(spoken_word, state)
 
             if match_result.matched:
-                self.last_matched_spoken = spoken_word
+                state.last_matched_spoken = spoken_word
 
                 if match_result.advanced:
                     # Update optimistic position
-                    self.optimistic_position += 1
+                    state.optimistic_position += 1
 
                     # Track words for validation triggering
                     self.words_since_validation += 1
-
-                    # Sync current_word_index with optimistic for display
-                    self.current_word_index = self.optimistic_position
             else:
-                self.last_matched_spoken = None
+                state.last_matched_spoken = None
 
-                self.word_queue.insert(0, spoken_word)
-                match_result = self._match_words_with_skipping()
+                state.word_queue.insert(0, spoken_word)
+                match_result = self._match_words_with_skipping(state)
                 if match_result.matches > 0:
                     # Update optimistic position
-                    self.optimistic_position += match_result.advances
+                    state.optimistic_position += match_result.advances
 
                     # Track words for validation triggering
                     self.words_since_validation += match_result.advances
-
-                    # Sync current_word_index with optimistic for display
-                    self.current_word_index = self.optimistic_position
                 # Else check for backtrack / forward jump
-                elif self.allow_jump_detection:
+                elif len(state.word_queue) >= 5:  # allow_jump_detection
                     # No words matched - this could indicate a backtrack or forward jump!
                     # Immediately validate if we have enough new words to work with
-                    self.detect_jump()
+                    self.detect_jump(state)
 
-    def _match_single_word(self, spoken_word: str, optimistic_position: int | None = None) -> SingleWordMatchResult:
+    def _match_single_word(self, spoken_word: str, state: TrackingState) -> SingleWordMatchResult:
         """
         Try to advance position based on new spoken words.
 
@@ -431,8 +560,7 @@ class ScriptTracker:
         Also skips filler words, repeated words, and allows skipping script words.
         Returns whether the word was matched, and whether to advance in the script.
         """
-        if optimistic_position is None:
-            optimistic_position = self.optimistic_position
+        optimistic_position = state.optimistic_position
 
         if optimistic_position >= len(self.words):
             return SingleWordMatchResult(False, False, False)
@@ -491,44 +619,43 @@ class ScriptTracker:
             return SingleWordMatchResult(True, False, True)
 
         # Skip repeated words (same word spoken twice in a row)
-        if self.last_matched_spoken and spoken_norm == self._normalize_word(self.last_matched_spoken):
+        if state.last_matched_spoken and spoken_norm == self._normalize_word(state.last_matched_spoken):
             return SingleWordMatchResult(True, False, True)
 
         return SingleWordMatchResult(False, False, False)
 
-    def _match_words_with_skipping(self) -> ManyWordMatchResult:
+    def _match_words_with_skipping(self, state: TrackingState) -> ManyWordMatchResult:
         def try_matching(variant_name: str, optimism_mode: int, tmp_optimistic_position: int):
+            # Clone state to work on - only copy back if successful
+            temp_state = state.clone()
+            temp_state.optimistic_position = tmp_optimistic_position
+
             speakable_words = self.parsed_script.speakable_words
             print(
-                f"Skip detection ({variant_name}): Current word queue: '{' '.join(self.word_queue)}'"
+                f"Skip detection ({variant_name}): Current word queue: '{' '.join(temp_state.word_queue)}'"
             )
 
             skip_count: int = 0
             match_count: int = 0
             advance_count: int = 0
 
-            reset_queue: list[str] = []
-            reset_expansion_state = self._expansion_matcher.clone()
-
             previous_skip_count: int = -1
             previous_match_count: int = -1
             while (
                 # While there are some words left to process
-                bool(self.word_queue)
+                bool(temp_state.word_queue)
                 # And we're allowed to skip words
                 and skip_count <= self.max_skip_distance
                 # And we're making some progress
                 and (skip_count > previous_skip_count or match_count > previous_match_count)
                 # And we're in-bounds of the script
-                and tmp_optimistic_position < len(speakable_words)
+                and temp_state.optimistic_position < len(speakable_words)
             ):
                 previous_skip_count = skip_count
                 previous_match_count = match_count
 
-                spoken_word = self.word_queue.pop(0)
-                reset_queue.append(spoken_word)
-
-                sw = speakable_words[tmp_optimistic_position]
+                spoken_word = temp_state.word_queue.pop(0)
+                sw = speakable_words[temp_state.optimistic_position]
 
                 # If the current script word is longer than the current spoken word,
                 # double check to see if combining the current and next spoken words
@@ -538,18 +665,18 @@ class ScriptTracker:
                 # We know we're calling this after failing to match a single word in
                 # the caller of this function. So we're safe to try to match longer
                 # words right away.
-                if bool(self.word_queue) and not sw.is_expansion and len(sw.text) >= len(spoken_word) * 1.5:
-                    next_spoken_word = self.word_queue[0]
+                if bool(temp_state.word_queue) and not sw.is_expansion and len(sw.text) >= len(spoken_word) * 1.5:
+                    next_spoken_word = temp_state.word_queue[0]
                     print(
                         f"Skip detection ({variant_name}): Testing compound spoken '{spoken_word + next_spoken_word}' against scripted '{sw.text}'"
                     )
                     if sw.text == spoken_word + next_spoken_word:
-                        self.word_queue.pop(0)
+                        temp_state.word_queue.pop(0)
                         match_count += 1 + skip_count
                         advance_count += 1
-                        tmp_optimistic_position += 1
-                        self.last_matched_spoken = None
-                        # We matched a word, so clear the skip state and return
+                        temp_state.optimistic_position += 1
+                        temp_state.last_matched_spoken = None
+                        # We matched a word, so clear the skip state
                         skip_count = 0
                         break
 
@@ -560,39 +687,40 @@ class ScriptTracker:
                 # Try to skip over the odd mismatched word (which can be a result of
                 # the speaker mispeaking or the transcription picking the wrong word
                 # compared to what the speaker actually spoke)
-                match_result = self._match_single_word(
-                    spoken_word, tmp_optimistic_position)
+                match_result = self._match_single_word(spoken_word, temp_state)
                 # Did we find a matching word?
                 if match_result.matched:
-                    self.last_matched_spoken = spoken_word
+                    temp_state.last_matched_spoken = spoken_word
 
                     match_count += 1 + skip_count
 
                     if match_result.advanced:
                         advance_count += 1
-                        tmp_optimistic_position += 1
+                        temp_state.optimistic_position += 1
 
-                    # We matched a word, so clear the skip state and return
+                    # We matched a word, so clear the skip state
                     skip_count = 0
                     break
                 else:
                     # Skip one word
                     skip_count += 1
                     advance_count += optimism_mode
-                    tmp_optimistic_position += optimism_mode
-                    self.last_matched_spoken = None
+                    temp_state.optimistic_position += optimism_mode
+                    temp_state.last_matched_spoken = None
 
                     if sw.is_expansion:
                         self.clear_expansion_state()
 
-            if skip_count > 0:
-                self.word_queue = reset_queue + self.word_queue
-                self._expansion_matcher = reset_expansion_state
-                advance_count -= skip_count * optimism_mode
-                skip_count = 0
+            # If we succeeded in matching, copy temp_state back to state
+            if match_count > 0:
+                state.word_queue = temp_state.word_queue
+                state.optimistic_position = temp_state.optimistic_position
+                state.last_matched_spoken = temp_state.last_matched_spoken
+                if temp_state.expansion_matcher:
+                    state.expansion_matcher = temp_state.expansion_matcher
 
             print(
-                f"Skip detection ({variant_name}): Final word queue: '{str(list(self.word_queue))}'"
+                f"Skip detection ({variant_name}): Final word queue: '{str(list(temp_state.word_queue))}'"
             )
 
             return ManyWordMatchResult(match_count, advance_count)
@@ -602,19 +730,19 @@ class ScriptTracker:
         for offset in range(0, self.max_skip_distance + 1):
             # Transcript and Script words skipped together
             result = try_matching(
-                f"T+S[{offset}]", 1, self.optimistic_position + offset)
+                f"T+S[{offset}]", 1, state.optimistic_position + offset)
             if result.matches > 0:
                 return ManyWordMatchResult(result.matches, result.advances + offset)
 
             # Only transcript words skipped
             result = try_matching(
-                f"T@S[{offset}]", 0, self.optimistic_position + offset)
+                f"T@S[{offset}]", 0, state.optimistic_position + offset)
             if result.matches > 0:
                 return ManyWordMatchResult(result.matches, result.advances + offset)
 
         return ManyWordMatchResult(0, 0)
 
-    def detect_jump(self) -> tuple[int, bool]:
+    def detect_jump(self, state: TrackingState) -> tuple[int, bool]:
         """
         Validate current position using window-based fuzzy matching.
         Called periodically to catch errors and detect backtracks.
@@ -929,7 +1057,3 @@ class ScriptTracker:
             confidence=0.0,
             speakable_index=self.current_word_index
         )
-
-    @property
-    def allow_jump_detection(self) -> bool:
-        return len(self.word_queue) >= 5

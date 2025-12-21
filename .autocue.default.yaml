@@ -20,4 +20,4 @@ tracking:
   match_threshold: 85.0
   backtrack_threshold: 4
   max_jump_distance: 80
-  max_skip_distance: 2
+  max_skip_distance: 4
