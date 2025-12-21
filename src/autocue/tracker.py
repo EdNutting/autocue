@@ -366,7 +366,7 @@ class ScriptTracker:
             self._expansion_matcher = speculative_state.expansion_matcher
 
         # Process words speculatively
-        self._process_words(speculative_state)
+        self._process_words(speculative_state, self.max_skip_distance)
 
         # If words remain unmatched, try recovery by dropping words one at a time
         # This helps recover from single misheard/misspoken words in partial results
@@ -381,7 +381,7 @@ class ScriptTracker:
 
             # Try processing remaining words
             if speculative_state.word_queue:
-                self._process_words(speculative_state)
+                self._process_words(speculative_state, self.max_skip_distance)
 
                 # If we made progress (queue got shorter), keep trying
                 if len(speculative_state.word_queue) < initial_queue_len - 1:
@@ -438,7 +438,7 @@ class ScriptTracker:
             self._expansion_matcher = self.committed_state.expansion_matcher
 
         # Process words on committed state
-        self._process_words(self.committed_state)
+        self._process_words(self.committed_state, 2 * self.max_skip_distance)
 
         # If words remain unmatched, try recovery by dropping words one at a time
         # This helps recover from single misheard/misspoken words
@@ -453,7 +453,7 @@ class ScriptTracker:
 
             # Try processing remaining words
             if self.committed_state.word_queue:
-                self._process_words(self.committed_state)
+                self._process_words(self.committed_state, 2 * self.max_skip_distance)
 
                 # If we made progress (queue got shorter), keep trying
                 if len(self.committed_state.word_queue) < initial_queue_len - 1:
@@ -551,7 +551,7 @@ class ScriptTracker:
 
         return display_lines, current_in_display, word_offset
 
-    def _process_words(self, state: TrackingState) -> None:
+    def _process_words(self, state: TrackingState, max_skip_distance: int) -> None:
         """Process words in the queue against the script, updating the state."""
         previous_length = len(state.word_queue) + 1
         while bool(state.word_queue) and previous_length > len(state.word_queue):
@@ -575,7 +575,7 @@ class ScriptTracker:
                 state.last_matched_spoken = None
 
                 state.word_queue.insert(0, spoken_word)
-                match_result = self._match_words_with_skipping(state)
+                match_result = self._match_words_with_skipping(state, max_skip_distance)
                 if match_result.matches > 0:
                     # Update optimistic position
                     state.optimistic_position += match_result.advances
@@ -664,7 +664,7 @@ class ScriptTracker:
 
         return SingleWordMatchResult(False, False, False)
 
-    def _match_words_with_skipping(self, state: TrackingState) -> ManyWordMatchResult:
+    def _match_words_with_skipping(self, state: TrackingState, max_skip_distance: int) -> ManyWordMatchResult:
         def try_matching(variant_name: str, optimism_mode: int, tmp_optimistic_position: int):
             # Clone state to work on - only copy back if successful
             temp_state = state.clone()
@@ -685,7 +685,7 @@ class ScriptTracker:
                 # While there are some words left to process
                 bool(temp_state.word_queue)
                 # And we're allowed to skip words
-                and skip_count <= self.max_skip_distance
+                and skip_count <= max_skip_distance
                 # And we're making some progress
                 and (skip_count > previous_skip_count or match_count > previous_match_count)
                 # And we're in-bounds of the script
@@ -767,7 +767,7 @@ class ScriptTracker:
 
         # Offset starting position in the script
         # Technically this mechanism allows a slip of 2 * max_skip_distance but who cares
-        for offset in range(0, self.max_skip_distance + 1):
+        for offset in range(0, max_skip_distance + 1):
             # Transcript and Script words skipped together
             result = try_matching(
                 f"T+S[{offset}]", 1, state.optimistic_position + offset)
