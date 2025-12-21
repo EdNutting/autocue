@@ -420,10 +420,30 @@ class ScriptTracker:
         # Process words on committed state
         self._process_words(self.committed_state)
 
-        # Clear any remaining unmatched words - user paused, so we discard leftovers
-        # This helps the system resync and avoids carrying forward words that didn't match
+        # If words remain unmatched, try recovery by dropping words one at a time
+        # This helps recover from single misheard/misspoken words
+        while self.committed_state.word_queue:
+            initial_queue_len = len(self.committed_state.word_queue)
+            print(
+                f"Final: {initial_queue_len} unmatched words remain, attempting recovery")
+
+            # Drop the first unmatched word and try again
+            dropped_word = self.committed_state.word_queue.pop(0)
+            print(f"Final: Dropping word '{dropped_word}' and retrying")
+
+            # Try processing remaining words
+            if self.committed_state.word_queue:
+                self._process_words(self.committed_state)
+
+                # If we made progress (queue got shorter), keep trying
+                if len(self.committed_state.word_queue) < initial_queue_len - 1:
+                    print(
+                        f"Final: Recovery successful, {initial_queue_len - 1 - len(self.committed_state.word_queue)} more words matched")
+
+        # Clear any remaining words that still couldn't be matched
         if self.committed_state.word_queue:
-            print(f"Final: Discarding {len(self.committed_state.word_queue)} unmatched words from queue")
+            print(
+                f"Final: Discarding {len(self.committed_state.word_queue)} remaining unmatched words")
             self.committed_state.word_queue.clear()
 
         # Update committed display position
