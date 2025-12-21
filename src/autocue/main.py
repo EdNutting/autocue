@@ -65,6 +65,11 @@ class AutocueApp:
         self.running = False
         self.audio_thread: Optional[threading.Thread] = None
 
+        # Track last sent position to avoid duplicate updates
+        self._last_sent_word_index: Optional[int] = None
+        self._last_sent_line_index: Optional[int] = None
+        self._last_sent_word_offset: Optional[int] = None
+
     def _write_transcript(self, text: str, is_partial: bool):
         """Write recognized text to the transcript file."""
         if not self.save_transcript or not self.transcript_file:
@@ -160,6 +165,10 @@ class AutocueApp:
                 print(f"Script loaded: {len(self.tracker.words)} words")
                 # Clear debug logs for new session
                 debug_log.clear_logs()
+                # Reset last sent position for new script
+                self._last_sent_word_index = None
+                self._last_sent_line_index = None
+                self._last_sent_word_offset = None
                 # Start transcript if preference was set (via UI checkbox or CLI flag)
                 if self.server._start_transcript_on_script or self.save_transcript:
                     self.server._start_transcript_on_script = False  # Reset flag
@@ -172,6 +181,10 @@ class AutocueApp:
                 if self.tracker:
                     self.tracker.reset()
                     print("Position reset to beginning")
+                    # Reset last sent position to force update
+                    self._last_sent_word_index = None
+                    self._last_sent_line_index = None
+                    self._last_sent_word_offset = None
 
             # Check for jump request
             if self.server._jump_requested is not None:
@@ -180,6 +193,10 @@ class AutocueApp:
                 if self.tracker:
                     self.tracker.jump_to(jump_to)
                     print(f"Jumped to word index {jump_to}")
+                    # Reset last sent position to force update
+                    self._last_sent_word_index = None
+                    self._last_sent_line_index = None
+                    self._last_sent_word_offset = None
 
             # Check for transcript toggle request
             if self.server._transcript_toggle_requested is not None:
@@ -239,22 +256,35 @@ class AutocueApp:
                         future_lines=self.server.settings.get("futureLines", 8)
                     )
 
-                    # Log what we're sending to the client
-                    word_at_pos = self.tracker.words[position.word_index] if position.word_index < len(self.tracker.words) else "END"
-                    debug_log.log_server_word(
-                        position.word_index, word_at_pos,
-                        f"SEND line={position.line_index} offset={word_offset}"
+                    # Only send update if position has actually changed or it's a backtrack
+                    position_changed = (
+                        position.word_index != self._last_sent_word_index or
+                        position.line_index != self._last_sent_line_index or
+                        word_offset != self._last_sent_word_offset
                     )
 
-                    # Send update to clients
-                    await self.server.send_position(
-                        word_index=position.word_index,
-                        line_index=position.line_index,
-                        word_offset=word_offset,
-                        confidence=position.confidence,
-                        is_backtrack=is_backtrack,
-                        transcript=result.text if result.is_partial else ""
-                    )
+                    if position_changed or is_backtrack:
+                        # Log what we're sending to the client
+                        word_at_pos = self.tracker.words[position.word_index] if position.word_index < len(self.tracker.words) else "END"
+                        debug_log.log_server_word(
+                            position.word_index, word_at_pos,
+                            f"SEND line={position.line_index} offset={word_offset}"
+                        )
+
+                        # Send update to clients
+                        await self.server.send_position(
+                            word_index=position.word_index,
+                            line_index=position.line_index,
+                            word_offset=word_offset,
+                            confidence=position.confidence,
+                            is_backtrack=is_backtrack,
+                            transcript=result.text if result.is_partial else ""
+                        )
+
+                        # Update last sent position
+                        self._last_sent_word_index = position.word_index
+                        self._last_sent_line_index = position.line_index
+                        self._last_sent_word_offset = word_offset
                     
             # Small sleep to prevent CPU spinning
             await asyncio.sleep(0.01)
