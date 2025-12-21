@@ -6,6 +6,7 @@ from src.autocue.script_parser import (
     PUNCTUATION_EXPANSIONS,
     get_all_expansions,
     get_expansion_first_words,
+    preprocess_token_for_punctuation,
     should_expand_punctuation,
 )
 
@@ -128,23 +129,108 @@ class TestGetExpansionFirstWords:
 class TestShouldExpandPunctuation:
     """Tests for should_expand_punctuation function."""
 
-    def test_returns_primary_expansion(self) -> None:
-        """should_expand_punctuation returns the first (primary) expansion."""
-        expansion: list[str] | None = should_expand_punctuation("&")
-        assert expansion == ["and"]  # Primary expansion
+    def test_returns_true_for_punctuation(self) -> None:
+        """should_expand_punctuation returns True for expandable punctuation."""
+        assert should_expand_punctuation("&") is True
+        assert should_expand_punctuation("/") is True
+        assert should_expand_punctuation("^") is True
+        assert should_expand_punctuation("+") is True
 
-        expansion = should_expand_punctuation("/")
-        assert expansion == ["slash"]  # Primary expansion
-
-    def test_returns_none_for_normal_words(self) -> None:
+    def test_returns_false_for_normal_words(self) -> None:
         """Normal words should not be expanded."""
-        assert should_expand_punctuation("hello") is None
-        assert should_expand_punctuation("world") is None
+        assert should_expand_punctuation("hello") is False
+        assert should_expand_punctuation("world") is False
 
     def test_handles_multi_char_operators(self) -> None:
         """Multi-character operators like '<=' should be handled."""
-        expansion: list[str] | None = should_expand_punctuation("<=")
-        assert expansion == ["less", "than", "or", "equal"]
+        assert should_expand_punctuation("<=") is True
+        assert should_expand_punctuation(">=") is True
 
-        expansion = should_expand_punctuation(">=")
-        assert expansion == ["greater", "than", "or", "equal"]
+
+class TestPreprocessTokenForPunctuation:
+    """Tests for the preprocess_token_for_punctuation function."""
+
+    def test_splits_caret_in_exponentiation(self) -> None:
+        """'2^3' should split into ['2', '^', '3']."""
+        result: list[str] = preprocess_token_for_punctuation("2^3")
+        assert result == ["2", "^", "3"]
+
+    def test_splits_variable_exponentiation(self) -> None:
+        """'x^n' should split into ['x', '^', 'n']."""
+        result: list[str] = preprocess_token_for_punctuation("x^n")
+        assert result == ["x", "^", "n"]
+
+    def test_splits_negative_exponentiation(self) -> None:
+        """'2^-3' should split into ['2', '^', '-3'] (minus preserved)."""
+        result: list[str] = preprocess_token_for_punctuation("2^-3")
+        assert result == ["2", "^", "-3"]
+
+    def test_preserves_negative_numbers(self) -> None:
+        """'-100' should stay as ['-100'] (minus preserved)."""
+        result: list[str] = preprocess_token_for_punctuation("-100")
+        assert result == ["-100"]
+
+    def test_preserves_forward_slash_in_units(self) -> None:
+        """'100GB/s' should stay as ['100GB/s'] (slash preserved)."""
+        result: list[str] = preprocess_token_for_punctuation("100GB/s")
+        assert result == ["100GB/s"]
+
+    def test_splits_equals_in_equation(self) -> None:
+        """'2^3=8' should split into ['2', '^', '3', '=', '8']."""
+        result: list[str] = preprocess_token_for_punctuation("2^3=8")
+        assert result == ["2", "^", "3", "=", "8"]
+
+    def test_splits_multiple_operators(self) -> None:
+        """'a+b=c' should split into ['a', '+', 'b', '=', 'c']."""
+        result: list[str] = preprocess_token_for_punctuation("a+b=c")
+        assert result == ["a", "+", "b", "=", "c"]
+
+    def test_splits_ampersand(self) -> None:
+        """'A&B' should split into ['A', '&', 'B']."""
+        result: list[str] = preprocess_token_for_punctuation("A&B")
+        assert result == ["A", "&", "B"]
+
+    def test_preserves_percent_pattern(self) -> None:
+        """'100%' is a known number pattern and should not be split."""
+        result: list[str] = preprocess_token_for_punctuation("100%")
+        assert result == ["100%"]
+
+    def test_splits_standalone_percent(self) -> None:
+        """'%' by itself should remain as ['%']."""
+        result: list[str] = preprocess_token_for_punctuation("%")
+        assert result == ["%"]
+
+    def test_splits_multi_char_operators(self) -> None:
+        """'x<=y' should split into ['x', '<=', 'y']."""
+        result: list[str] = preprocess_token_for_punctuation("x<=y")
+        assert result == ["x", "<=", "y"]
+
+    def test_handles_empty_string(self) -> None:
+        """Empty string should return empty list."""
+        result: list[str] = preprocess_token_for_punctuation("")
+        assert result == []
+
+    def test_handles_whitespace_only(self) -> None:
+        """Whitespace-only string should return empty list."""
+        result: list[str] = preprocess_token_for_punctuation("   ")
+        assert result == []
+
+    def test_regular_word_unchanged(self) -> None:
+        """Regular word should return as single-element list."""
+        result: list[str] = preprocess_token_for_punctuation("hello")
+        assert result == ["hello"]
+
+    def test_number_unchanged(self) -> None:
+        """Number without embedded punctuation should return as-is."""
+        result: list[str] = preprocess_token_for_punctuation("123")
+        assert result == ["123"]
+
+    def test_complex_equation(self) -> None:
+        """'(a+b)^2=c' should split properly."""
+        result: list[str] = preprocess_token_for_punctuation("a+b^2")
+        assert result == ["a", "+", "b", "^", "2"]
+
+    def test_preserves_decimal_numbers(self) -> None:
+        """'3.14' should remain as ['3.14'] (period not in PUNCTUATION_EXPANSIONS)."""
+        result: list[str] = preprocess_token_for_punctuation("3.14")
+        assert result == ["3.14"]

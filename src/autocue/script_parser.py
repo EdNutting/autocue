@@ -197,6 +197,95 @@ def is_silent_punctuation(token: str) -> bool:
     return all(c in SILENT_PUNCTUATION for c in stripped) if stripped else True
 
 
+def preprocess_token_for_punctuation(token: str) -> list[str]:
+    """Preprocess a token to add spaces around expandable punctuation.
+
+    This handles cases like "2^3" where the ^ is embedded in the token.
+    When punctuation is already surrounded by spaces, tokens are naturally
+    split. This function ensures embedded punctuation is also split.
+
+    Exceptions:
+    - Minus (-) is preserved when part of negative numbers
+    - Forward slash (/) is preserved as it may be part of unit names
+    - Tokens that match known number patterns (e.g., "25%", "$100") are not split
+
+    Args:
+        token: Token to preprocess
+
+    Returns:
+        List of sub-tokens after splitting on embedded punctuation
+
+    Examples:
+        "2^3" -> ["2", "^", "3"]
+        "x^n" -> ["x", "^", "n"]
+        "2^-3" -> ["2", "^", "-3"]
+        "-100" -> ["-100"]  (minus preserved)
+        "100GB/s" -> ["100GB/s"]  (slash preserved)
+        "25%" -> ["25%"]  (known number pattern, preserved)
+    """
+    if not token or not token.strip():
+        return []
+
+    # Check if this token is a known number pattern - if so, don't split it
+    # Strip surrounding punctuation first for detection
+    stripped = strip_surrounding_punctuation(token)
+    if is_number_token(stripped):
+        # This is a recognized number pattern - keep it intact
+        return [token]
+
+    # Also check if the whole token (with surrounding punct) is a number pattern
+    if is_number_token(token.strip()):
+        return [token]
+
+    # Get punctuation characters that should be split out
+    # Exclude minus and forward slash as requested
+    split_punctuation = set(PUNCTUATION_EXPANSIONS.keys()) - {'-', '/'}
+
+    # Build a list of sub-tokens by splitting on punctuation
+    result: list[str] = []
+    current: str = ""
+
+    i = 0
+    while i < len(token):
+        char = token[i]
+
+        # Check if this is a multi-character operator we should split
+        # (e.g., "<=", ">=")
+        found_multi_char = False
+        for punct in split_punctuation:
+            if len(punct) > 1 and token[i:i+len(punct)] == punct:
+                # Found a multi-character punctuation
+                if current:
+                    result.append(current)
+                    current = ""
+                result.append(punct)
+                i += len(punct)
+                found_multi_char = True
+                break
+
+        if found_multi_char:
+            continue
+
+        # Check single-character punctuation
+        if char in split_punctuation:
+            # Split out the punctuation
+            if current:
+                result.append(current)
+                current = ""
+            result.append(char)
+            i += 1
+        else:
+            # Regular character, accumulate
+            current += char
+            i += 1
+
+    # Add any remaining content
+    if current:
+        result.append(current)
+
+    return result if result else [token]
+
+
 class HTMLTextExtractor(HTMLParser):
     """Extract text content from HTML, preserving word boundaries."""
 
@@ -251,7 +340,7 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
         if not token.strip():
             continue
 
-        # Create raw token
+        # Create raw token (keep original token for HTML mapping)
         raw_token: RawToken = RawToken(
             text=token,
             index=raw_index
@@ -259,48 +348,75 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
         raw_tokens.append(raw_token)
         raw_to_speakable[raw_index] = []
 
-        # Check for punctuation expansion
-        expansion = should_expand_punctuation(token)
+        # Preprocess token to split out embedded punctuation for speakable words
+        # (e.g., "2^3" becomes ["2", "^", "3"])
+        # This only affects speakable words, not raw tokens
+        sub_tokens = preprocess_token_for_punctuation(token)
 
-        # Strip surrounding punctuation for number detection
-        # e.g., "1100," -> "1100", '"100"' -> "100"
-        stripped_token: str = strip_surrounding_punctuation(token)
+        # Process each sub-token to create speakable words
+        for sub_token in sub_tokens:
+            if not sub_token.strip():
+                continue
 
-        if expansion:
-            # Punctuation token - create ONE speakable word with all expansions
-            # Get all possible expansions for dynamic matching
-            all_exps: list[list[str]] | None = get_all_expansions(token)
-            assert all_exps is not None
-            sw: SpeakableWord = SpeakableWord(
-                text="<expansion>",
-                raw_token_index=raw_index,
-                is_expansion=True,
-                all_expansions=all_exps
-            )
-            speakable_words.append(sw)
-            raw_to_speakable[raw_index].append(speakable_index)
-            speakable_to_raw[speakable_index] = raw_index
-            speakable_index += 1
-        elif is_number_token(stripped_token):
-            # Number token - create ONE speakable word with all expansions
-            # The tracker handles matching variable-length expansions dynamically
-            number_expansions: list[list[str]] | None = get_number_expansions(
-                stripped_token)
-            if number_expansions:
+            # Check for punctuation expansion
+            expansion = should_expand_punctuation(sub_token)
+
+            # Strip surrounding punctuation for number detection
+            # e.g., "1100," -> "1100", '"100"' -> "100"
+            stripped_token: str = strip_surrounding_punctuation(sub_token)
+
+            if expansion:
+                # Punctuation token - create ONE speakable word with all expansions
+                # Get all possible expansions for dynamic matching
+                all_exps: list[list[str]] | None = get_all_expansions(sub_token)
+                assert all_exps is not None
                 sw: SpeakableWord = SpeakableWord(
-                    text="<numeric expansion>",
+                    text="<expansion>",
                     raw_token_index=raw_index,
                     is_expansion=True,
-                    all_expansions=number_expansions
+                    all_expansions=all_exps
                 )
                 speakable_words.append(sw)
                 raw_to_speakable[raw_index].append(speakable_index)
                 speakable_to_raw[speakable_index] = raw_index
                 speakable_index += 1
+            elif is_number_token(stripped_token):
+                # Number token - create ONE speakable word with all expansions
+                # The tracker handles matching variable-length expansions dynamically
+                number_expansions: list[list[str]] | None = get_number_expansions(
+                    stripped_token)
+                if number_expansions:
+                    sw: SpeakableWord = SpeakableWord(
+                        text="<numeric expansion>",
+                        raw_token_index=raw_index,
+                        is_expansion=True,
+                        all_expansions=number_expansions
+                    )
+                    speakable_words.append(sw)
+                    raw_to_speakable[raw_index].append(speakable_index)
+                    speakable_to_raw[speakable_index] = raw_index
+                    speakable_index += 1
+                else:
+                    # Fallback: treat as normal word (shouldn't happen)
+                    normalized: str = normalize_word(sub_token)
+                    if normalized:
+                        sw: SpeakableWord = SpeakableWord(
+                            text=normalized,
+                            raw_token_index=raw_index,
+                            is_expansion=False
+                        )
+                        speakable_words.append(sw)
+                        raw_to_speakable[raw_index].append(speakable_index)
+                        speakable_to_raw[speakable_index] = raw_index
+                        speakable_index += 1
+            elif is_silent_punctuation(sub_token):
+                # Pure punctuation - no speakable word, but still a raw token
+                # (raw_to_speakable[raw_index] remains empty list)
+                pass
             else:
-                # Fallback: treat as normal word (shouldn't happen)
-                normalized: str = normalize_word(token)
-                if normalized:
+                # Normal word - normalize and add
+                normalized: str = normalize_word(sub_token)
+                if normalized:  # Skip if normalizes to empty
                     sw: SpeakableWord = SpeakableWord(
                         text=normalized,
                         raw_token_index=raw_index,
@@ -310,23 +426,6 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
                     raw_to_speakable[raw_index].append(speakable_index)
                     speakable_to_raw[speakable_index] = raw_index
                     speakable_index += 1
-        elif is_silent_punctuation(token):
-            # Pure punctuation - no speakable word, but still a raw token
-            # (raw_to_speakable[raw_index] remains empty list)
-            pass
-        else:
-            # Normal word - normalize and add
-            normalized: str = normalize_word(token)
-            if normalized:  # Skip if normalizes to empty
-                sw: SpeakableWord = SpeakableWord(
-                    text=normalized,
-                    raw_token_index=raw_index,
-                    is_expansion=False
-                )
-                speakable_words.append(sw)
-                raw_to_speakable[raw_index].append(speakable_index)
-                speakable_to_raw[speakable_index] = raw_index
-                speakable_index += 1
 
         raw_index += 1
 

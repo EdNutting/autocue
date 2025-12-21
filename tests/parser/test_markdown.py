@@ -4,7 +4,7 @@ Tests for Markdown handling in script parsing.
 
 import markdown
 
-from src.autocue.script_parser import ParsedScript, parse_script
+from src.autocue.script_parser import ParsedScript, SpeakableWord, parse_script
 
 
 class TestMarkdownHandling:
@@ -44,10 +44,16 @@ End of list."""
             script, extensions=['nl2br', 'sane_lists'])
         parsed: ParsedScript = parse_script(script, html)
 
-        words: list[str] = [sw.text for sw in parsed.speakable_words]
+        # Find the expansion words (should include the "-" expansion)
+        expansion_words: list[SpeakableWord] = [
+            sw for sw in parsed.speakable_words if sw.is_expansion]
 
-        # The '-' between 5 and 3 should expand to "minus"
-        assert "minus" in words
+        # Should have at least one expansion word with "minus" in its expansions
+        has_minus: bool = any(
+            any("minus" in exp for exp in sw.all_expansions)
+            for sw in expansion_words
+        )
+        assert has_minus, "Expected '-' to have 'minus' as an expansion"
 
     def test_markdown_headers_not_tokenized(self) -> None:
         """Markdown header markers (#) should not appear as tokens."""

@@ -224,11 +224,23 @@ class AutocueApp:
 
             # Check for jump request
             if self.server.jump_requested is not None:
-                jump_to: int = self.server.jump_requested
+                raw_token_index: int = self.server.jump_requested
                 self.server.jump_requested = None
-                if self.tracker:
-                    self.tracker.jump_to(jump_to)
-                    print(f"Jumped to word index {jump_to}")
+                if self.tracker and self.server.parsed_script:
+                    # Convert raw token index to speakable index
+                    # When a raw token maps to multiple speakable words (e.g., "2^3" → [2, ^, 3]),
+                    # jump to the first speakable word from that raw token
+                    speakable_indices = self.server.parsed_script.raw_to_speakable.get(
+                        raw_token_index, [])
+                    if speakable_indices:
+                        speakable_index = speakable_indices[0]
+                        self.tracker.jump_to(speakable_index)
+                        print(
+                            f"Jumped to raw token {raw_token_index} (speakable word {speakable_index})")
+                    else:
+                        # No speakable words for this raw token (shouldn't happen)
+                        print(
+                            f"Warning: No speakable words for raw token {raw_token_index}")
                     # Reset last sent position to force update
                     self._last_sent_word_index = None
                     self._last_sent_line_index = None

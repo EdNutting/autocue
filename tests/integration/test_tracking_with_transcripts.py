@@ -98,8 +98,9 @@ class TestTranscriptTracking:
             last_position = current_position
 
         # The maximum jump should be small (1-2 words typically, maybe 3 with skipping)
-        # We allow up to 5 to account for skip-ahead matching
-        assert max_jump <= 5, f"Maximum jump was {max_jump}, expected <= 5"
+        # We allow up to 6 to account for skip-ahead matching and embedded punctuation splitting
+        # (e.g., "2^3" becomes 3 tokens: "2", "^", "3")
+        assert max_jump <= 6, f"Maximum jump was {max_jump}, expected <= 6"
 
         # Position should have advanced significantly through the script
         final_progress: float = tracker.progress
@@ -233,9 +234,9 @@ class TestTranscriptTracking:
             last_position = current_position
 
         # Large forward jumps should be rare
-        # We allow some due to word skipping (speaker skips a word)
-        assert largest_forward_jump <= 5, \
-            f"Largest forward jump was {largest_forward_jump} words, expected <= 5"
+        # We allow some due to word skipping (speaker skips a word) and embedded punctuation splitting
+        assert largest_forward_jump <= 6, \
+            f"Largest forward jump was {largest_forward_jump} words, expected <= 6"
         # Most updates should advance by 0-2 words
         total_updates: int = len(all_words)
         jump_ratio: float = large_jump_count / total_updates

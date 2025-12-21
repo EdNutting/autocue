@@ -182,6 +182,7 @@ class WebServer:
         self.script_text: str = ""
         self.script_html: str = ""
         self.total_words: int = 0
+        self.parsed_script: ParsedScript | None = None
         self.reset_requested: bool = False
         self.jump_requested: int | None = None
         # True=start, False=stop
@@ -437,7 +438,7 @@ class WebServer:
 
     async def _render_and_broadcast_script(self) -> None:
         """Render script to HTML and broadcast to all clients."""
-        self.script_html, self.total_words, _ = render_script_with_word_indices(
+        self.script_html, self.total_words, self.parsed_script = render_script_with_word_indices(
             self.script_text
         )
         await self.broadcast({
@@ -452,7 +453,7 @@ class WebServer:
         data: dict[str, object] = await request.json()
         self.script_text = str(data.get("text", ""))
         # Render with word indices embedded in the HTML
-        self.script_html, self.total_words, _ = render_script_with_word_indices(
+        self.script_html, self.total_words, self.parsed_script = render_script_with_word_indices(
             self.script_text
         )
         await self.broadcast({
