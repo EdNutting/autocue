@@ -20,7 +20,8 @@ class TestTranscriptTracking:
     @pytest.fixture
     def number_test_script(self):
         """Load the number test script."""
-        script_path = Path(__file__).parent.parent.parent / "samples" / "number_test_script.md"
+        script_path = Path(__file__).parent.parent.parent / \
+            "samples" / "number_test_script.md"
         return script_path.read_text()
 
     @pytest.fixture
@@ -74,7 +75,7 @@ class TestTranscriptTracking:
 
         # Feed every word to simulate word-by-word updates
         cumulative_text = ""
-        for i, word in enumerate(all_words):
+        for word in all_words:
             if cumulative_text:
                 cumulative_text += " " + word
             else:
@@ -131,7 +132,8 @@ class TestTranscriptTracking:
             # A jump should not exceed 1.5x the chunk size (50% tolerance)
             max_reasonable_jump = max(5, int(chunk_word_count * 1.5))
             if jump > max_reasonable_jump:
-                disproportionate_jumps.append((jump, chunk_word_count, line[:40]))
+                disproportionate_jumps.append(
+                    (jump, chunk_word_count, line[:40]))
 
             last_position = current_position
 

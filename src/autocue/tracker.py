@@ -6,7 +6,7 @@ detects when the speaker backtracks to restart a sentence.
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Tuple, Optional, FrozenSet
 from rapidfuzz import fuzz
 import markdown
 
@@ -590,6 +590,8 @@ class ScriptTracker:
         Returns:
             Updated ScriptPosition (uses optimistic position for responsiveness)
         """
+        # Update position using optimistic matching (fast path)
+
         if not transcription.strip():
             return self.current_position()
 
@@ -648,7 +650,7 @@ class ScriptTracker:
         # Convert speakable index to raw token index for UI
         raw_index = self._speakable_to_raw_index(self.optimistic_position)
 
-        return ScriptPosition(
+        position = ScriptPosition(
             word_index=raw_index,  # Raw token index for UI highlighting
             line_index=self._word_to_line_index(self.optimistic_position),
             confidence=100.0 if words_advanced > 0 else 0.0,
@@ -656,6 +658,33 @@ class ScriptTracker:
             is_backtrack=is_backtrack,
             speakable_index=self.optimistic_position  # Internal tracking index
         )
+
+        # Check if validation is needed (every 5 words)
+        position.is_backtrack = False
+        if self.needs_validation:
+            logger.debug(
+                "[VALIDATION] Triggering validation at position %d",
+                position.word_index
+            )
+            validated_pos, is_backtrack = self.validate_position(transcription)
+            position.is_backtrack = is_backtrack
+            if position.is_backtrack or validated_pos != position.word_index:
+                # Position was corrected by validation
+                logger.info(
+                    "[VALIDATION RESULT] is_backtrack=%s, validated_pos=%d, "
+                    "original_pos=%d",
+                    is_backtrack, validated_pos, position.word_index
+                )
+                position = self.current_position()
+                position.is_backtrack = is_backtrack
+            # if position.is_backtrack:
+            #     logger.warning(
+            #         "[BACKTRACK] Sending backtrack signal to clients, "
+            #         "new position=%d",
+            #         position.word_index
+            #     )
+
+        return position
 
     def validate_position(self, transcription: str) -> Tuple[int, bool]:
         """

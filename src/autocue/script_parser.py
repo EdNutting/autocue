@@ -10,7 +10,7 @@ punctuation is spoken aloud (e.g., "&" as "and", "<" as "less than").
 
 import re
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, FrozenSet
 from html.parser import HTMLParser
 
 from .number_expander import is_number_token, get_number_expansions

@@ -231,36 +231,10 @@ class AutocueApp:
                     # Save transcript if enabled
                     self._write_transcript(result.text, result.is_partial)
 
-                    # Update position using optimistic matching (fast path)
                     position = self.tracker.update(
                         result.text,
                         is_partial=result.is_partial
                     )
-
-                    # Check if validation is needed (every 5 words)
-                    is_backtrack = False
-                    if self.tracker.needs_validation:
-                        logger.debug(
-                            "[VALIDATION] Triggering validation at position %d",
-                            position.word_index
-                        )
-                        validated_pos, is_backtrack = self.tracker.validate_position(
-                            result.text)
-                        if is_backtrack or validated_pos != position.word_index:
-                            # Position was corrected by validation
-                            logger.info(
-                                "[VALIDATION RESULT] is_backtrack=%s, validated_pos=%d, "
-                                "original_pos=%d",
-                                is_backtrack, validated_pos, position.word_index
-                            )
-                            position = self.tracker.current_position()
-                            position.is_backtrack = is_backtrack
-                        if is_backtrack:
-                            logger.warning(
-                                "[BACKTRACK] Sending backtrack signal to clients, "
-                                "new position=%d",
-                                position.word_index
-                            )
 
                     # Get display info
                     _lines, _current_line_idx, word_offset = self.tracker.get_display_lines(
@@ -275,7 +249,7 @@ class AutocueApp:
                         word_offset != self._last_sent_word_offset
                     )
 
-                    if position_changed or is_backtrack:
+                    if position_changed or position.is_backtrack:
                         # Log what we're sending to the client
                         word_at_pos = self.tracker.words[position.word_index] if position.word_index < len(
                             self.tracker.words) else "END"
@@ -290,7 +264,7 @@ class AutocueApp:
                             line_index=position.line_index,
                             word_offset=word_offset,
                             confidence=position.confidence,
-                            is_backtrack=is_backtrack,
+                            is_backtrack=position.is_backtrack,
                             transcript=result.text if result.is_partial else ""
                         )
 
