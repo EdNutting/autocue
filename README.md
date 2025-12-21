@@ -1,6 +1,26 @@
 # Autocue
 
-A low-latency teleprompter with local speech recognition. Paste your script (with Markdown support), and the display scrolls automatically as you speak—including detecting when you backtrack to restart a sentence.
+A low-latency teleprompter/autocue with local speech recognition. Paste your
+script (with Markdown support), and the display scrolls automatically as you
+speak—including detecting when you backtrack to restart a sentence.
+
+## Note on AI-written code
+
+The code was written almost entirely by Claude, with me prompting it for
+improvements. While the implementation uses only local AI (speech recognition)
+to do transcription, AI-generated code comes with other risks. I make no
+promises about this code being production-worthy or safe. This is really just a
+hobby project to support my own work on YouTube.
+
+Use at your own risk / judgement.
+
+Contributions are welcome. Contributions written by AI will be subject to equal
+scrutiny.
+
+## Platforms
+
+I've written this for use on my Macbook Air M3. If it works on any other
+platforms, that's a happy coincidence.
 
 ## Features
 
@@ -60,7 +80,8 @@ Then open http://127.0.0.1:8765 in your browser.
 2. **Adjust settings** in the right panel (font size, colors, etc.)
 3. **Click "Start Prompter"** to begin
 4. **Speak** - the display tracks your position automatically
-5. **Make a mistake?** Just restart your sentence - the prompter will detect the backtrack
+5. **Make a mistake?** Just restart your sentence - the prompter will detect the
+   backtrack
 
 ### Keyboard Shortcuts (in prompter mode)
 
@@ -121,10 +142,14 @@ The settings panel lets you configure:
 ## How It Works
 
 1. **Audio Capture**: Your Mac's microphone captures audio in 100ms chunks
-2. **Streaming Transcription**: Vosk processes audio in real-time, providing partial results as you speak (not waiting for complete sentences)
-3. **Fuzzy Matching**: The tracker uses `rapidfuzz` to match transcribed text to your script, tolerating minor recognition errors
-4. **Backtrack Detection**: If the matched position jumps backwards significantly, it's detected as a backtrack (you restarted a sentence)
-5. **Web UI**: Updates are pushed via WebSocket to provide smooth, real-time scrolling
+2. **Streaming Transcription**: Vosk processes audio in real-time, providing
+   partial results as you speak (not waiting for complete sentences)
+3. **Fuzzy Matching**: The tracker uses `rapidfuzz` to match transcribed text to
+   your script, tolerating minor recognition errors
+4. **Backtrack Detection**: If the matched position jumps backwards
+   significantly, it's detected as a backtrack (you restarted a sentence)
+5. **Web UI**: Updates are pushed via WebSocket to provide smooth, real-time
+   scrolling
 
 ## Troubleshooting
 
