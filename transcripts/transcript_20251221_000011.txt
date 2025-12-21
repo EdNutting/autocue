@@ -1,0 +1,41 @@
+=== Transcript started at 2025-12-21T00:00:11.645013 ===
+
+number expansion test
+script
+this script tests various number formats to verify the autocue system handles them correctly when spoken aloud
+basic integers let's start with some simple numbers the number one zero zero can be said as one hundred or a hundred
+similarly one thousand is one thousand or a thousand
+when we get to larger numbers like one one zero zero people often say eleven hundred instead of one thousand one hundred
+the same applies to one thousand two hundred which becomes twelve hundred and one thousand five hundred
+as fifteen hundred
+for really large numbers consider eleven thousand which is eleven thousand or one zero zero zero zero zero as one hundred thousand a million is written as one zero zero zero zero zero zero
+decimal numbers decimals are interesting the number three point one four is spoken as three point one four when we have three points zero seven we say three point zero seven or three point one seven
+leading zeros are common too
+the value zero point five can be said as zero point five point five or simply half
+similarly zero point three is zero point three or just point three
+for precision zero point two five is zero point two five or a quarter
+and zero point three three might be zero point three three or approximately one third
+ordinal numbers
+rankings use ordinals the first place winner the second runner up and the third position all the podium spots beyond that we have fourth fifth and so on
+larger ordinals work to the twenty third of december the one hundred and first airborne division or celebrating your fiftieth birthday
+technology numbers
+tech specs are full of mixed numbers the m three processor is apple's latest chip a four k display has roughly four thousand horizontal pixels
+storage is measured in gigabytes one hundred gigabytes two hundred and fifty six gigabytes or one terabyte for a terabyte
+memory bandwidth might be one hundred gigabytes per second
+processor speeds like four point zero five gigahertz mean four point zero five gigahertz
+older chips ran at two point four gigahertz or eight hundred megahertz
+measurements with units
+distance the race is five meters long or perhaps one hundred meters
+a marathon is about two forty two kilometers
+time the reaction took five hundred milliseconds which is half a second light travels three hundred thousand kilometers in one second
+speed the car reached one hundred miles per hour while in metric that's about one hundred and sixty kilometers per hour
+data rates your internet might be one hundred megabits per second or one gigabits per second
+mixed examples in context
+the new smartphone features an m three chip running at three point two gigahertz with eight gigabytes of ram and two hundred and fifty six gigabytes of storage it costs around one thousand dollars or one thousand and ninety nine dollars for the larger model in the first quarter of twenty twenty four the company shipped eleven thousand units at twenty five
+five percent increase from the previous year's eight thousand eight hundred units
+the experiment measured no point three three seconds of delay over a five meter cable achieving ninety nine point seven percent accuracy across one million test runs
+final summary this script is tested in digits like one hundred one thousand one thousand one hundred eleven thousand and one million decimals like three point one four zero point five zero point three three and zero point two five ordinal was like first second third twenty third and one
+a hundred and first tech specs like m three four k one hundred gigabytes four point zero five gigahertz units like five meters five hundred milliseconds one hundred miles per hour one gigabits per second
+if the autocue tracked all of these correctly the number expansion system is working
+
+=== Transcript ended at 2025-12-21T00:05:36.514680 ===
