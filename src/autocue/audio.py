@@ -64,7 +64,12 @@ class AudioCapture:
         if self.running:
             return
 
+        import time
+        start_time = time.time()
+        print(f"[AUDIO] Starting audio capture...")
+
         self.running = True
+        stream_create_start = time.time()
         self.stream = sd.RawInputStream(
             samplerate=self.sample_rate,
             blocksize=self.chunk_size,
@@ -73,7 +78,12 @@ class AudioCapture:
             channels=1,
             callback=self._audio_callback
         )
+        print(f"[AUDIO] RawInputStream created in {time.time() - stream_create_start:.3f}s")
+
+        stream_start_time = time.time()
         self.stream.start()
+        print(f"[AUDIO] stream.start() took {time.time() - stream_start_time:.3f}s")
+        print(f"[AUDIO] Total audio start time: {time.time() - start_time:.3f}s")
 
     def stop(self) -> None:
         """Stop capturing audio."""

@@ -5,7 +5,10 @@ Tests cover:
 - Integer expansion (100, 1000, 1100)
 - Decimal expansion (3.07, 0.5, 0.33)
 - Ordinal expansion (1st, 2nd, 23rd)
-- Mixed alphanumeric (M3, 4K, 100GB)
+- Mixed alphanumeric (M3, 4K, 100GB, 300,000km)
+- Currency expansion ($100, £1,000, €50, ¥500)
+- Percentage expansion (25%, 1,000%, 0.5%)
+- Comma-separated numbers with units (300,000km, 1,000GB)
 - Common fractions
 - Edge cases
 """
@@ -15,11 +18,14 @@ import markdown
 
 from src.autocue.number_expander import (
     COMMON_FRACTIONS,
+    CURRENCY_SYMBOLS,
     UNIT_EXPANSIONS,
+    expand_currency,
     expand_decimal,
     expand_integer,
     expand_mixed_alphanumeric,
     expand_ordinal,
+    expand_percent,
     get_number_expansions,
     is_number_token,
 )
@@ -81,6 +87,27 @@ class TestIsNumberToken:
         assert is_number_token("4.05GHz") is True
         assert is_number_token("5m") is True
         assert is_number_token("10s") is True
+
+    def test_comma_separated_with_units(self) -> None:
+        """Comma-separated numbers with units should be detected."""
+        assert is_number_token("300,000km") is True
+        assert is_number_token("1,000GB") is True
+        assert is_number_token("10,000ms") is True
+
+    def test_currency(self) -> None:
+        """Currency amounts should be detected."""
+        assert is_number_token("$100") is True
+        assert is_number_token("$1,000") is True
+        assert is_number_token("£500") is True
+        assert is_number_token("€1,000") is True
+        assert is_number_token("¥5000") is True
+
+    def test_percent(self) -> None:
+        """Percentages should be detected."""
+        assert is_number_token("25%") is True
+        assert is_number_token("1,000%") is True
+        assert is_number_token("0.5%") is True
+        assert is_number_token("100%") is True
 
     def test_regular_words_not_detected(self) -> None:
         """Regular words should not be detected as numbers."""
@@ -407,6 +434,37 @@ class TestGetNumberExpansions:
         assert result is not None
         assert ["four", "k"] in result
 
+    def test_currency_detection(self) -> None:
+        """Currency amounts should be detected and expanded."""
+        result: list[list[str]] | None = get_number_expansions("$100")
+        assert result is not None
+        assert ["one", "hundred", "dollars"] in result
+
+        result = get_number_expansions("£1,000")
+        assert result is not None
+        assert any("thousand" in exp and "pounds" in exp for exp in result)
+
+    def test_percent_detection(self) -> None:
+        """Percentages should be detected and expanded."""
+        result: list[list[str]] | None = get_number_expansions("25%")
+        assert result is not None
+        assert ["twenty", "five", "percent"] in result
+
+        result = get_number_expansions("1,000%")
+        assert result is not None
+        assert ["one", "thousand", "percent"] in result
+
+    def test_comma_unit_detection(self) -> None:
+        """Comma-separated numbers with units should be detected."""
+        result: list[list[str]] | None = get_number_expansions("300,000km")
+        assert result is not None
+        # Should have "three hundred thousand" + unit
+        has_number: bool = any(
+            "three" in exp and "hundred" in exp and "thousand" in exp
+            for exp in result
+        )
+        assert has_number
+
 
 class TestCommonFractions:
     """Tests for common fraction mappings."""
@@ -491,15 +549,22 @@ class TestIntegrationWithParser:
         assert ["one", "hundred"] in sw.all_expansions
 
     def test_ordinal_in_script(self) -> None:
-        """Ordinals in script should expand correctly."""
+        """Ordinals in script should create ONE speakable word with expansion."""
         script: str = "This is the 1st item"
         html: str = markdown.markdown(
             script, extensions=['nl2br', 'sane_lists'])
         parsed: ParsedScript = parse_script(script, html)
 
-        words: list[str] = [sw.text for sw in parsed.speakable_words]
+        # Find the expansion word for "1st"
+        expansion_words: list[SpeakableWord] = [
+            sw for sw in parsed.speakable_words if sw.is_expansion]
+        # ONE speakable word per expandable token
+        assert len(expansion_words) == 1
 
-        assert "first" in words
+        # The speakable word should have all_expansions containing "first"
+        sw: SpeakableWord = expansion_words[0]
+        assert sw.all_expansions is not None
+        assert ["first"] in sw.all_expansions
 
     def test_decimal_in_script(self) -> None:
         """Decimals in script should create ONE speakable word with all expansions."""
@@ -599,6 +664,167 @@ class TestIntegrationWithParser:
             exp[:2] == ["five", "hundred"] for exp in sw.all_expansions
         )
         assert has_five_hundred
+
+    def test_currency_in_script(self) -> None:
+        """Currency in script should create expansion speakable words."""
+        script: str = "The price is $1,000 dollars"
+        html: str = markdown.markdown(
+            script, extensions=['nl2br', 'sane_lists'])
+        parsed: ParsedScript = parse_script(script, html)
+
+        # Find the expansion word for "$1,000"
+        expansion_words: list[SpeakableWord] = [
+            sw for sw in parsed.speakable_words if sw.is_expansion]
+        assert len(expansion_words) == 1
+
+        sw: SpeakableWord = expansion_words[0]
+        assert sw.all_expansions is not None
+        # Should have "one thousand dollars" or "a thousand dollars"
+        has_thousand_dollars: bool = any(
+            "thousand" in exp and "dollars" in exp
+            for exp in sw.all_expansions
+        )
+        assert has_thousand_dollars
+
+    def test_percent_in_script(self) -> None:
+        """Percentages in script should create expansion speakable words."""
+        script: str = "The rate increased by 25% last year"
+        html: str = markdown.markdown(
+            script, extensions=['nl2br', 'sane_lists'])
+        parsed: ParsedScript = parse_script(script, html)
+
+        # Find the expansion word for "25%"
+        expansion_words: list[SpeakableWord] = [
+            sw for sw in parsed.speakable_words if sw.is_expansion]
+        assert len(expansion_words) == 1
+
+        sw: SpeakableWord = expansion_words[0]
+        assert sw.all_expansions is not None
+        # Should have "twenty five percent"
+        assert ["twenty", "five", "percent"] in sw.all_expansions
+
+    def test_comma_unit_in_script(self) -> None:
+        """Comma-separated numbers with units in script should work."""
+        script: str = "The distance is 300,000km to the moon"
+        html: str = markdown.markdown(
+            script, extensions=['nl2br', 'sane_lists'])
+        parsed: ParsedScript = parse_script(script, html)
+
+        # Find the expansion word for "300,000km"
+        expansion_words: list[SpeakableWord] = [
+            sw for sw in parsed.speakable_words if sw.is_expansion]
+        assert len(expansion_words) == 1
+
+        sw: SpeakableWord = expansion_words[0]
+        assert sw.all_expansions is not None
+        # Should have "three hundred thousand" in at least one expansion
+        has_three_hundred_thousand: bool = any(
+            "three" in exp and "hundred" in exp and "thousand" in exp
+            for exp in sw.all_expansions
+        )
+        assert has_three_hundred_thousand
+
+
+class TestExpandCurrency:
+    """Tests for currency expansion."""
+
+    def test_dollar_100(self) -> None:
+        """$100 should expand to 'one hundred dollars'."""
+        expansions: list[list[str]] = expand_currency("$100")
+        assert ["one", "hundred", "dollars"] in expansions
+        assert ["a", "hundred", "dollars"] in expansions
+
+    def test_dollar_1000_with_comma(self) -> None:
+        """$1,000 should expand to 'one thousand dollars'."""
+        expansions: list[list[str]] = expand_currency("$1,000")
+        assert ["one", "thousand", "dollars"] in expansions
+        assert ["a", "thousand", "dollars"] in expansions
+
+    def test_pound_500(self) -> None:
+        """£500 should expand to 'five hundred pounds'."""
+        expansions: list[list[str]] = expand_currency("£500")
+        assert ["five", "hundred", "pounds"] in expansions
+
+    def test_euro_1000(self) -> None:
+        """€1,000 should expand to 'one thousand euros'."""
+        expansions: list[list[str]] = expand_currency("€1,000")
+        assert ["one", "thousand", "euros"] in expansions
+
+    def test_yen_5000(self) -> None:
+        """¥5000 should expand to 'five thousand yen'."""
+        expansions: list[list[str]] = expand_currency("¥5000")
+        assert ["five", "thousand", "yen"] in expansions
+
+    def test_currency_with_decimal(self) -> None:
+        """Currency with decimals should work."""
+        expansions: list[list[str]] = expand_currency("$3.50")
+        # Should have decimal expansion + currency
+        has_point: bool = any("point" in exp for exp in expansions)
+        assert has_point
+        has_dollars: bool = any("dollars" in exp for exp in expansions)
+        assert has_dollars
+
+
+class TestExpandPercent:
+    """Tests for percentage expansion."""
+
+    def test_25_percent(self) -> None:
+        """25% should expand to 'twenty five percent'."""
+        expansions: list[list[str]] = expand_percent("25%")
+        assert ["twenty", "five", "percent"] in expansions
+
+    def test_100_percent(self) -> None:
+        """100% should expand to 'one hundred percent'."""
+        expansions: list[list[str]] = expand_percent("100%")
+        assert ["one", "hundred", "percent"] in expansions
+        assert ["a", "hundred", "percent"] in expansions
+
+    def test_1000_percent_with_comma(self) -> None:
+        """1,000% should expand to 'one thousand percent'."""
+        expansions: list[list[str]] = expand_percent("1,000%")
+        assert ["one", "thousand", "percent"] in expansions
+
+    def test_decimal_percent(self) -> None:
+        """0.5% should expand to decimal + percent."""
+        expansions: list[list[str]] = expand_percent("0.5%")
+        # Should have forms ending with "percent"
+        assert all(exp[-1] == "percent" for exp in expansions)
+        # Should have decimal expansion
+        has_point: bool = any("point" in exp for exp in expansions)
+        assert has_point
+
+
+class TestCommaInUnits:
+    """Tests for comma-separated numbers with units."""
+
+    def test_300000km_with_comma(self) -> None:
+        """300,000km should expand correctly."""
+        expansions: list[list[str]] | None = get_number_expansions("300,000km")
+        assert expansions is not None
+        # Should have "three hundred thousand" + unit variations
+        has_three_hundred_thousand: bool = any(
+            exp[:3] == ["three", "hundred", "thousand"]
+            for exp in expansions
+        )
+        assert has_three_hundred_thousand
+
+    def test_1000gb_with_comma(self) -> None:
+        """1,000GB should expand to 'one thousand gigabytes'."""
+        expansions: list[list[str]] | None = get_number_expansions("1,000GB")
+        assert expansions is not None
+        # Should have gigabytes form
+        has_gigabytes: bool = any("gigabytes" in exp for exp in expansions)
+        assert has_gigabytes
+        # Should include "one thousand" or "a thousand"
+        has_thousand: bool = any("thousand" in exp for exp in expansions)
+        assert has_thousand
+
+    def test_10000ms_with_comma(self) -> None:
+        """10,000ms should expand to 'ten thousand milliseconds'."""
+        expansions: list[list[str]] | None = get_number_expansions("10,000ms")
+        assert expansions is not None
+        has_milliseconds: bool = any("milliseconds" in exp for exp in expansions)
+        assert has_milliseconds
 
 
 class TestEdgeCases:

@@ -157,6 +157,12 @@ class ExpansionMatcher:
         self.active_expansions = []
         self.expansion_match_position = 0
 
+    def clone(self) -> "ExpansionMatcher":
+        result = ExpansionMatcher(self.parsed_script)
+        result.active_expansions = [xs.copy() for xs in self.active_expansions]
+        result.expansion_match_position = self.expansion_match_position
+        return result
+
     @property
     def is_active(self) -> bool:
         """Check if currently matching an expansion."""

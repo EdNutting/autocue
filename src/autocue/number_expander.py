@@ -9,9 +9,12 @@ Supported formats:
 - Comma-separated: 1,100, 1,000,000
 - Decimals: 3.07, 0.5, 0.33
 - Ordinals: 1st, 2nd, 3rd, 23rd
-- Mixed alphanumeric: M3, 4K, 100GB, 4.05GHz
+- Mixed alphanumeric: M3, 4K, 100GB, 300,000km, 4.05GHz
+- Currency: $100, £1,000, €50, ¥500
+- Percentages: 25%, 1,000%, 0.5%
 
 Units are ONLY expanded when attached to numbers (not standalone).
+Numbers with units support comma separators (e.g., 300,000km).
 """
 
 import re
@@ -20,6 +23,9 @@ from re import Pattern
 from num2words import num2words
 
 # Regex patterns for detecting number types
+# Pattern for numbers with optional commas and decimals
+_NUMBER_PATTERN = r'\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?'
+
 PATTERNS: dict[str, Pattern[str]] = {
     # Pure integers: 100, 1000, 1000000
     'integer': re.compile(r'^-?\d+$'),
@@ -33,14 +39,20 @@ PATTERNS: dict[str, Pattern[str]] = {
     # Ordinals: 1st, 2nd, 3rd, 23rd, 101st
     'ordinal': re.compile(r'^(\d+)(st|nd|rd|th)$', re.IGNORECASE),
 
-    # Mixed alphanumeric prefix: M3, V8 (letter(s) then number)
-    'prefix_mixed': re.compile(r'^([A-Za-z]+)(\d+(?:\.\d+)?)$'),
+    # Currency: $100, £1,000, €50, ¥500 (symbol then number)
+    'currency': re.compile(rf'^([$£€¥])({_NUMBER_PATTERN})$'),
 
-    # Mixed alphanumeric suffix: 4K, 100GB, 4.05GHz (number then letters)
-    'suffix_mixed': re.compile(r'^(\d+(?:\.\d+)?)([A-Za-z]+)$'),
+    # Percent: 25%, 1,000%, 0.5% (number then % symbol)
+    'percent': re.compile(rf'^({_NUMBER_PATTERN})%$'),
 
-    # Rate units: 100GB/s, 60fps, 1000MB/s (number + unit + "/" + unit)
-    'rate_unit': re.compile(r'^(\d+(?:\.\d+)?)([A-Za-z]+)/([A-Za-z]+)$'),
+    # Mixed alphanumeric prefix: M3, V8 (letter(s) then number, with optional commas)
+    'prefix_mixed': re.compile(rf'^([A-Za-z]+)({_NUMBER_PATTERN})$'),
+
+    # Mixed alphanumeric suffix: 4K, 100GB, 300,000km, 4.05GHz (number then letters)
+    'suffix_mixed': re.compile(rf'^({_NUMBER_PATTERN})([A-Za-z]+)$'),
+
+    # Rate units: 100GB/s, 1,000MB/s (number + unit + "/" + unit, with optional commas)
+    'rate_unit': re.compile(rf'^({_NUMBER_PATTERN})([A-Za-z]+)/([A-Za-z]+)$'),
 }
 
 
@@ -128,6 +140,15 @@ UNIT_EXPANSIONS: dict[str, list[list[str]]] = {
     'v': [['v'], ['volts'], ['volt']],
     'a': [['a'], ['amps'], ['amperes']],
     'ma': [['m', 'a'], ['milliamps'], ['milliamperes']],
+}
+
+
+# Currency symbol mappings
+CURRENCY_SYMBOLS: dict[str, list[list[str]]] = {
+    '$': [['dollar'], ['dollars']],
+    '£': [['pound'], ['pounds']],
+    '€': [['euro'], ['euros']],
+    '¥': [['yen']],
 }
 
 
@@ -380,6 +401,73 @@ def expand_ordinal(token: str) -> list[list[str]]:
     return [ordinal_words]
 
 
+def expand_currency(token: str) -> list[list[str]]:
+    """Expand a currency amount to spoken form.
+
+    Args:
+        token: Currency string (e.g., "$100", "£1,000", "€50")
+
+    Returns:
+        List of alternatives
+
+    Examples:
+        "$100" -> [["one", "hundred", "dollars"], ["a", "hundred", "dollars"]]
+        "£1,000" -> [["one", "thousand", "pounds"], ["a", "thousand", "pounds"]]
+    """
+    match: re.Match[str] | None = PATTERNS['currency'].match(token.strip())
+    if not match:
+        return []
+
+    symbol: str = match.group(1)
+    num_str: str = match.group(2)
+
+    # Get currency word alternatives
+    currency_words_list: list[list[str]] = CURRENCY_SYMBOLS.get(symbol, [[symbol]])
+
+    # Expand the number part
+    num_expansions: list[list[str]] = _expand_number_part(num_str)
+
+    alternatives: list[list[str]] = []
+    for num_exp in num_expansions:
+        for currency_words in currency_words_list:
+            alt: list[str] = num_exp + currency_words
+            if alt not in alternatives:
+                alternatives.append(alt)
+
+    return alternatives
+
+
+def expand_percent(token: str) -> list[list[str]]:
+    """Expand a percentage to spoken form.
+
+    Args:
+        token: Percent string (e.g., "25%", "1,000%", "0.5%")
+
+    Returns:
+        List of alternatives
+
+    Examples:
+        "25%" -> [["twenty", "five", "percent"]]
+        "1,000%" -> [["one", "thousand", "percent"], ["a", "thousand", "percent"]]
+    """
+    match: re.Match[str] | None = PATTERNS['percent'].match(token.strip())
+    if not match:
+        return []
+
+    num_str: str = match.group(1)
+
+    # Expand the number part
+    num_expansions: list[list[str]] = _expand_number_part(num_str)
+
+    alternatives: list[list[str]] = []
+    for num_exp in num_expansions:
+        alt: list[str] = num_exp + ['percent']
+        if alt not in alternatives:
+            alternatives.append(alt)
+
+    return alternatives
+
+
 def _expand_unit_suffix(suffix: str) -> list[list[str]]:
     """Expand a unit suffix to possible spoken forms.
 
@@ -402,15 +490,18 @@ def _expand_number_part(num_str: str) -> list[list[str]]:
     """Expand just the number portion of a mixed token.
 
     Args:
-        num_str: Number string which may be integer or decimal
+        num_str: Number string which may be integer or decimal (with optional commas)
 
     Returns:
         List of alternatives for the number part
     """
-    if '.' in num_str:
-        return expand_decimal(num_str)
+    # Strip commas from the number string
+    normalized = num_str.replace(',', '')
+
+    if '.' in normalized:
+        return expand_decimal(normalized)
     else:
-        return expand_integer(int(num_str))
+        return expand_integer(int(normalized))
 
 
 def expand_mixed_alphanumeric(token: str) -> list[list[str]]:
@@ -535,6 +626,8 @@ def get_number_expansions(token: str) -> list[list[str]] | None:
         "100" -> [["one", "hundred"], ["a", "hundred"], ["one", "zero", "zero"]]
         "1st" -> [["first"]]
         "4K" -> [["four", "k"], ["four", "thousand"]]
+        "$1,000" -> [["one", "thousand", "dollars"], ["a", "thousand", "dollars"]]
+        "25%" -> [["twenty", "five", "percent"]]
         "hello" -> None
     """
     stripped = token.strip()
@@ -544,6 +637,14 @@ def get_number_expansions(token: str) -> list[list[str]] | None:
     # Try ordinal first (most specific pattern with suffix)
     if PATTERNS['ordinal'].match(stripped):
         return expand_ordinal(stripped)
+
+    # Try currency (specific pattern with prefix)
+    if PATTERNS['currency'].match(stripped):
+        return expand_currency(stripped)
+
+    # Try percent (specific pattern with suffix)
+    if PATTERNS['percent'].match(stripped):
+        return expand_percent(stripped)
 
     # Try comma-separated integer
     if PATTERNS['comma_integer'].match(stripped):
@@ -558,13 +659,13 @@ def get_number_expansions(token: str) -> list[list[str]] | None:
     if PATTERNS['integer'].match(stripped):
         return expand_integer(int(stripped))
 
+    # Try rate units (100GB/s, 1000MB/s) - check before mixed alphanumeric
+    if PATTERNS['rate_unit'].match(stripped):
+        return expand_rate_unit(stripped)
+
     # Try mixed alphanumeric (prefix or suffix)
     if PATTERNS['prefix_mixed'].match(stripped) or PATTERNS['suffix_mixed'].match(stripped):
         return expand_mixed_alphanumeric(stripped)
-
-    # Try rate units (100GB/s, 1000MB/s)
-    if PATTERNS['rate_unit'].match(stripped):
-        return expand_rate_unit(stripped)
 
     return None
 

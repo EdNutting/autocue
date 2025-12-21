@@ -112,11 +112,10 @@ def replay_transcript(
         result = tracker.update(cumulative_transcript, is_partial=False)
 
         position_after: int = result.speakable_index
-        is_backtrack: bool = result.is_backtrack
 
         # Detect event type
         event_type: EventType
-        if is_backtrack:
+        if position_after < position_before:
             event_type = "BACKTRACK"
         elif position_after > position_before + 5:
             event_type = "FORWARD_JUMP"
@@ -170,7 +169,7 @@ def replay_transcript(
         events.append(event)
 
         # Trigger validation if needed (simulate main loop behavior)
-        if tracker.allow_validation:
+        if tracker.allow_jump_detection:
             validated_pos: int
             was_backtrack: bool
             validated_pos, was_backtrack = tracker.detect_jump(
@@ -287,7 +286,7 @@ def replay_transcript_word_by_word(
                 partial_transcript, is_partial=not is_final)
 
             position_after: int = result.speakable_index
-            is_backtrack: bool = result.is_backtrack
+            is_backtrack: bool = result.is_jump
 
             # Detect event type
             # NOTE: "advance" means position moved forward, "no_advance" means position stayed same
@@ -388,7 +387,7 @@ def replay_transcript_word_by_word(
             events.append(event)
 
             # Trigger validation if needed
-            if tracker.allow_validation:
+            if tracker.allow_jump_detection:
                 validated_pos: int
                 was_backtrack: bool
                 validated_pos, was_backtrack = (

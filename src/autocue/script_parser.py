@@ -9,7 +9,7 @@ punctuation is spoken aloud (e.g., "&" as "and", "<" as "less than").
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
 from .number_expander import get_number_expansions, is_number_token
@@ -73,10 +73,10 @@ class SpeakableWord:
     # True if this is an expandable token (number/punctuation)
     is_expansion: bool = False
     # For expandable tokens, store all possible expansions for dynamic matching
-    all_expansions: list[list[str]] | None = None
+    all_expansions: list[list[str]] = field(default_factory=list)
 
     def __repr__(self) -> str:
-        if self.is_expansion and self.all_expansions:
+        if self.is_expansion:
             return (f"SpeakableWord('{self.text}' -> raw[{self.raw_token_index}] "
                     f"expansions={len(self.all_expansions)})")
         return f"SpeakableWord('{self.text}' -> raw[{self.raw_token_index}])"
@@ -143,24 +143,15 @@ def strip_surrounding_punctuation(token: str) -> str:
     return token
 
 
-def should_expand_punctuation(token: str) -> list[str] | None:
+def should_expand_punctuation(token: str) -> bool:
     """Check if a token should be expanded to spoken words.
 
     Returns the PRIMARY expansion (first in the list) or None if no expansion needed.
     The primary expansion is used for position tracking in the speakable words list.
     """
-    # First check for exact multi-character matches (e.g., "<=", ">=")
-    if token in PUNCTUATION_EXPANSIONS:
-        # Return first (primary) expansion
-        return PUNCTUATION_EXPANSIONS[token][0]
-
-    # Check if the entire token is a single punctuation character
+    # Check if the entire token is a punctuation character
     stripped = token.strip()
-    if len(stripped) == 1 and stripped in PUNCTUATION_EXPANSIONS:
-        # Return first (primary) expansion
-        return PUNCTUATION_EXPANSIONS[stripped][0]
-
-    return None
+    return len(stripped) > 0 and stripped in PUNCTUATION_EXPANSIONS
 
 
 def get_all_expansions(token: str) -> list[list[str]] | None:
@@ -173,15 +164,12 @@ def get_all_expansions(token: str) -> list[list[str]] | None:
     Example: get_all_expansions("100") returns [["one", "hundred"], ["a", "hundred"], ...]
     """
     # Check punctuation first
-    if token in PUNCTUATION_EXPANSIONS:
-        return PUNCTUATION_EXPANSIONS[token]
-
     stripped = token.strip()
-    if len(stripped) == 1 and stripped in PUNCTUATION_EXPANSIONS:
+    if len(stripped) > 0 and stripped in PUNCTUATION_EXPANSIONS:
         return PUNCTUATION_EXPANSIONS[stripped]
 
     # Check for number expansions
-    number_expansions = get_number_expansions(token)
+    number_expansions = get_number_expansions(stripped)
     if number_expansions:
         return number_expansions
 
@@ -272,7 +260,7 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
         raw_to_speakable[raw_index] = []
 
         # Check for punctuation expansion
-        expansion: list[str] | None = should_expand_punctuation(token)
+        expansion = should_expand_punctuation(token)
 
         # Strip surrounding punctuation for number detection
         # e.g., "1100," -> "1100", '"100"' -> "100"
@@ -282,8 +270,9 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
             # Punctuation token - create ONE speakable word with all expansions
             # Get all possible expansions for dynamic matching
             all_exps: list[list[str]] | None = get_all_expansions(token)
+            assert all_exps is not None
             sw: SpeakableWord = SpeakableWord(
-                text=expansion[0].lower(),  # Primary first word for display
+                text="<expansion>",
                 raw_token_index=raw_index,
                 is_expansion=True,
                 all_expansions=all_exps
@@ -299,7 +288,7 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
                 stripped_token)
             if number_expansions:
                 sw: SpeakableWord = SpeakableWord(
-                    text=number_expansions[0][0].lower(),  # Primary first word
+                    text="<numeric expansion>",
                     raw_token_index=raw_index,
                     is_expansion=True,
                     all_expansions=number_expansions

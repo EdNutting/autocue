@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 import markdown
 from rapidfuzz import fuzz
 
-from . import debug_log
 from .expansion_matcher import ExpansionMatcher
 from .script_parser import (
     ParsedScript,
@@ -31,7 +30,6 @@ class ScriptPosition:
     confidence: float  # Match confidence (0-100)
     matched_words: list[str] = field(
         default_factory=list)  # Recently matched words
-    is_backtrack: bool = False  # True if this is a backtrack from previous position
     # Index in speakable words list (for internal tracking)
     speakable_index: int = 0
 
@@ -43,6 +41,21 @@ class ScriptLine:
     words: list[str]  # Normalized words
     word_start_index: int  # Index of first word in global word list
     html: str = ""  # HTML rendered version (for Markdown)
+
+
+@dataclass
+class SingleWordMatchResult:
+    """Result of trying to match a single word."""
+    matched: bool
+    advanced: bool
+    skipped: bool
+
+
+@dataclass
+class ManyWordMatchResult:
+    """Result of trying to match multiple words."""
+    matches: int
+    advances: int
 
 
 class ScriptTracker:
@@ -59,7 +72,7 @@ class ScriptTracker:
 
     window_size: int
     match_threshold: float
-    backtrack_threshold: int
+    jump_threshold: int
     max_jump_distance: int
     max_skip_distance: int
 
@@ -69,12 +82,12 @@ class ScriptTracker:
     word_to_line: list[int]
 
     current_word_index: int
+    word_queue: list[str]
+    last_matched_spoken: str | None
 
     optimistic_position: int
     last_transcription: str
     words_since_validation: int
-    allow_validation: bool
-    skip_disabled_count: int
 
     _expansion_matcher: ExpansionMatcher
 
@@ -83,7 +96,7 @@ class ScriptTracker:
         script_text: str,
         window_size: int = 8,
         match_threshold: float = 70.0,
-        backtrack_threshold: int = 3,
+        jump_threshold: int = 3,
         max_jump_distance: int = 50,
         max_skip_distance: int = 2
     ) -> None:
@@ -102,7 +115,7 @@ class ScriptTracker:
         """
         self.window_size = window_size
         self.match_threshold = match_threshold
-        self.backtrack_threshold = backtrack_threshold
+        self.jump_threshold = jump_threshold
         self.max_jump_distance = max_jump_distance
         self.max_skip_distance = max_skip_distance
 
@@ -126,16 +139,13 @@ class ScriptTracker:
 
         # Tracking state (all indices are speakable word indices)
         self.current_word_index = 0
+        self.word_queue = []
+        self.last_matched_spoken = None
 
         # Optimistic tracking state
         self.optimistic_position = 0  # Fast-path position for immediate UI updates
         self.last_transcription = ""  # Track previous transcript to detect new words
         self.words_since_validation = 0  # Counter for validation triggering
-        self.allow_validation = False  # Flag when validation should run
-
-        # After backtrack, disable skip logic until we've matched a few words
-        # This prevents old transcript words from incorrectly matching future positions
-        self.skip_disabled_count = 0  # Number of words to disable skip for
 
         # Dynamic expansion matching (handles numbers/punctuation alternatives)
         self._expansion_matcher = ExpansionMatcher(self.parsed_script)
@@ -188,10 +198,6 @@ class ScriptTracker:
         """Convert speakable word index to raw token index for UI."""
         return speakable_to_raw_index(self.parsed_script, speakable_idx)
 
-    def _get_expansion_first_words(self, speakable_idx: int) -> list[str]:
-        """Get all possible FIRST words that could start matching at this position."""
-        return self._expansion_matcher.get_first_words(speakable_idx)
-
     def _start_expansion_matching(self, speakable_idx: int) -> bool:
         """Initialize expansion matching state for an expandable token."""
         return self._expansion_matcher.start(speakable_idx)
@@ -229,29 +235,7 @@ class ScriptTracker:
             return True
 
         # Fuzzy match for speech recognition errors
-        # Use stricter threshold (75%) than window matching (65%)
-        return fuzz.ratio(spoken_norm, script_norm) >= 75
-
-    def _word_matches_at_position(self, spoken: str, speakable_idx: int) -> bool:
-        """Check if a spoken word could START matching at a speakable position.
-
-        For expandable tokens, checks if the word matches the first word
-        of any possible expansion. For regular words, checks direct match.
-        """
-        spoken_norm: str = self._normalize_word(spoken)
-        if not spoken_norm:
-            return False
-
-        first_words: list[str] = self._get_expansion_first_words(speakable_idx)
-        for word in first_words:
-            # Exact match
-            if spoken_norm == word:
-                return True
-            # Fuzzy match
-            if fuzz.ratio(spoken_norm, word) >= 75:
-                return True
-
-        return False
+        return fuzz.ratio(spoken_norm, script_norm) >= self.match_threshold
 
     def extract_new_words(self, transcription: str) -> list[str]:
         """
@@ -283,41 +267,10 @@ class ScriptTracker:
         # If no prefix match, this is a new utterance
         return current_words
 
-    def _transcript_matches_position(self, transcript_words: list[str], position: int) -> bool:
-        """
-        Check if the transcript words match the script around the given position.
-        Used to verify if the optimistic position is reasonable.
-        """
-        if not transcript_words or position >= len(self.words):
-            return False
-
-        # Look at a window around the position (a few words before and after)
-        start: int = max(0, position - 3)
-        end: int = min(len(self.words), position + 3)
-        nearby_words: list[str] = self.words[start:end]
-
-        if not nearby_words:
-            return False
-
-        # Check if the last few transcript words match any nearby script words
-        # This indicates we're in the right area
-        last_transcript: list[str] = transcript_words[-3:] if len(
-            transcript_words) >= 3 else transcript_words
-        matches: int = 0
-        for tw in last_transcript:
-            tw_norm: str = self._normalize_word(tw)
-            for sw in nearby_words:
-                if self._word_matches(tw_norm, sw):
-                    matches += 1
-                    break
-
-        # If most of the recent words match nearby script, trust the position
-        threshold: float = len(last_transcript) * 0.5
-        return matches >= threshold
-
     # Common filler words to skip during optimistic matching
     FILLER_WORDS: frozenset[str] = frozenset([
-        'um', 'uh', 'ah', 'er', 'eh', 'hm', 'hmm', 'mm', 'mhm',
+        'um', 'uh', 'ah', 'er', 'eh', 'hm', 'hmm', 'mm', 'mhm', 'umm', 'ahh',
+        'err', 'ehh', 'uhh', 'mmm', 'huh',
         'like', 'so', 'well', 'anyway', 'basically', 'actually',
         'literally', 'honestly', 'right', 'okay', 'ok', 'yeah', 'yes', 'no'
     ])
@@ -326,7 +279,147 @@ class ScriptTracker:
         """Check if a word is a common filler word that can be skipped."""
         return self._normalize_word(word) in self.FILLER_WORDS
 
-    def _advance(self, new_words: list[str]) -> int:
+    def update(self, transcription: str, is_partial: bool = True) -> ScriptPosition:
+        """
+        Update position based on new transcription.
+
+        Uses a two-track approach:
+        1. Optimistic: Advance word-by-word for immediate UI response
+        2. Validation: Triggered to catch errors/backtracks
+
+        Args:
+            transcription: The transcribed text
+            is_partial: True if this is a partial (in-progress) result
+
+        Returns:
+            Updated ScriptPosition (uses optimistic position for responsiveness)
+        """
+        if is_partial:
+            return self.current_position
+
+        transcription = transcription.strip()
+        if not transcription:
+            return self.current_position
+
+        # Extract only the NEW words from the transcription
+        new_words: list[str] = self.extract_new_words(transcription)
+        if not new_words:
+            return self.current_position
+
+        print("-------------------------------------------")
+        print(f"Tracker: Word queue '{' '.join(self.word_queue)}'")
+        print(f"Tracker: New words '{' '.join(new_words)}'")
+        for word in new_words:
+            self.word_queue.append(word)
+        print(
+            f"Tracker: Updated word queue '{' '.join(self.word_queue)}'")
+
+        # Store transcription for next comparison
+        self.last_transcription = transcription
+
+        self._process_words()
+
+        return self.current_position
+
+    def reset(self) -> None:
+        """Reset tracking to the beginning of the script."""
+        # Reset tracking state
+        self.current_word_index = 0
+        self.word_queue = []
+        self.last_matched_spoken = None
+        # Reset optimistic state
+        self.optimistic_position = 0
+        self.last_transcription = ""
+        self.words_since_validation = 0
+        # Reset expansion state
+        self.clear_expansion_state()
+
+    def jump_to(self, word_index: int) -> None:
+        """Jump to a specific position in the script."""
+        word_index = max(0, min(word_index, len(
+            self.words) - 1)) if self.words else 0
+
+        self.reset()
+
+        self.current_word_index = word_index
+        self.optimistic_position = word_index
+
+    def get_display_lines(
+        self,
+        past_lines: int = 1,
+        future_lines: int = 10
+    ) -> tuple[list[ScriptLine], int, int]:
+        """
+        Get lines to display around the current position.
+
+        Args:
+            past_lines: Number of lines before current to show
+            future_lines: Number of lines after current to show
+
+        Returns:
+            Tuple of (lines_to_display, current_line_index_in_list, current_word_offset)
+        """
+        current_line: int = self._word_to_line_index(self.current_word_index)
+
+        start_line: int = max(0, current_line - past_lines)
+        end_line: int = min(len(self.lines), current_line + future_lines + 1)
+
+        display_lines: list[ScriptLine] = self.lines[start_line:end_line]
+        current_in_display: int = current_line - start_line
+
+        # Calculate word offset within current line
+        word_offset: int
+        if current_line < len(self.lines):
+            line: ScriptLine = self.lines[current_line]
+            word_offset = self.current_word_index - line.word_start_index
+        else:
+            word_offset = 0
+
+        return display_lines, current_in_display, word_offset
+
+    def _process_words(self) -> None:
+        previous_length = len(self.word_queue) + 1
+        while bool(self.word_queue) and previous_length > len(self.word_queue):
+            previous_length = len(self.word_queue)
+
+            # Try to advance optimistically based on new words
+            spoken_word = self.word_queue.pop(0)
+            print(f"Exact-match detection: Testing word '{spoken_word}'")
+            match_result = self._match_single_word(spoken_word)
+
+            if match_result.matched:
+                self.last_matched_spoken = spoken_word
+
+                if match_result.advanced:
+                    # Update optimistic position
+                    self.optimistic_position += 1
+
+                    # Track words for validation triggering
+                    self.words_since_validation += 1
+
+                    # Sync current_word_index with optimistic for display
+                    self.current_word_index = self.optimistic_position
+            else:
+                self.last_matched_spoken = None
+
+                self.word_queue.insert(0, spoken_word)
+                match_result = self._match_words_with_skipping()
+                if match_result.matches > 0:
+                    # Update optimistic position
+                    self.optimistic_position += match_result.advances
+
+                    # Track words for validation triggering
+                    self.words_since_validation += match_result.advances
+
+                    # Sync current_word_index with optimistic for display
+                    self.current_word_index = self.optimistic_position
+                # Else check for backtrack / forward jump
+                elif self.allow_jump_detection:
+                    # No words matched - this could indicate a backtrack or forward jump!
+                    # Immediately validate if we have enough new words to work with
+                    self.detect_jump()
+
+    def _match_single_word(self, spoken_word: str, optimistic_position: int | None = None) -> SingleWordMatchResult:
         """
         Try to advance position based on new spoken words.
 
@@ -336,186 +429,380 @@ class ScriptTracker:
         - Advances position when an expansion is complete
 
         Also skips filler words, repeated words, and allows skipping script words.
-        Returns the number of script positions we advanced.
+        Returns whether the word was matched, and whether to advance in the script.
         """
-        if not new_words or self.optimistic_position >= len(self.words):
-            return 0
+        if optimistic_position is None:
+            optimistic_position = self.optimistic_position
 
-        positions_advanced: int = 0
-        pos: int = self.optimistic_position
-        consecutive_misses: int = 0  # Track consecutive non-matching words
-        max_consecutive_misses: int = 3  # Allow skipping up to 3 spoken words
-        # Track last matched word to detect repetitions
-        last_matched_spoken: str | None = None
+        if optimistic_position >= len(self.words):
+            return SingleWordMatchResult(False, False, False)
 
-        word_idx: int = 0
-        while word_idx < len(new_words):
-            if pos >= len(self.words):
-                break
+        spoken_norm: str = self._normalize_word(spoken_word)
 
-            spoken_word: str = new_words[word_idx]
-            spoken_norm: str = self._normalize_word(spoken_word)
+        # Skip empty words
+        if not spoken_norm:
+            return SingleWordMatchResult(True, False, True)
 
-            # Skip empty words
-            if not spoken_norm:
-                word_idx += 1
-                continue
+        # 1. Try detection against the script first
+        #    - optimistic assumption that the speaker didn't mess up
+        #    1.a. Are we matching an expansion? If so, try to continue the match
+        #    1.b. Else, try to match against the script
+        # 2. Else, skip filler words
+        # 3. Else, skip repeated words
 
-            # 1. Skip filler words - but only if they DON'T match the current script position
-            #    This prevents skipping "like" when the script actually says "like"
-            # 2. Check if this filler word matches the script at current position
-            if (self._is_filler_word(spoken_word)
-                    and not self._word_matches_at_position(spoken_word, pos)):
-                consecutive_misses = 0  # Filler words don't count as misses
-                debug_log.log_server_word(
-                    pos, f"[filler:{spoken_word}]", "skip_filler")
-                word_idx += 1
-                continue
-            # Otherwise, fall through and try to match normally
-
-            # Skip repeated words (same word spoken twice in a row)
-            if last_matched_spoken and spoken_norm == self._normalize_word(last_matched_spoken):
-                consecutive_misses = 0  # Repetitions don't count as misses
-                debug_log.log_server_word(
-                    pos, f"[repeat:{spoken_word}]", "skip_repeat")
-                word_idx += 1
-                continue
-
-            matched: bool = False
-            skip_allowed: bool = self.skip_disabled_count <= 0
-
-            # Check if we're in the middle of matching an expansion
-            if self.active_expansions:
-                # Try to continue the current expansion
-                if self._filter_expansions_by_word(spoken_word):
-                    msg: str = (f"exp_match \"{spoken_norm}\" pos={self.expansion_match_position} "
-                                f"remaining={len(self.active_expansions)}")
-                    debug_log.log_server_word(pos, self.words[pos], msg)
-                    matched = True
-                    last_matched_spoken = spoken_word
-                    consecutive_misses = 0
-                    word_idx += 1
-
-                    # Check if expansion is complete
-                    if self._is_expansion_complete():
-                        debug_log.log_server_word(
-                            pos, self.words[pos], "exp_complete")
-                        pos += 1
-                        positions_advanced += 1
-                        self.clear_expansion_state()
-                        if self.skip_disabled_count > 0:
-                            self.skip_disabled_count -= 1
-                else:
-                    # Word doesn't match any remaining expansion
-                    # Expansion ended early - advance position and try this word at next pos
-                    msg = (f"exp_ended \"{spoken_norm}\" "
-                           f"(no match at pos {self.expansion_match_position})")
-                    debug_log.log_server_word(pos, self.words[pos], msg)
-                    pos += 1
-                    positions_advanced += 1
+        # Check if we're in the middle of matching an expansion
+        if self.active_expansions:
+            # Try to continue the current expansion
+            if self._filter_expansions_by_word(spoken_norm):
+                # Check if expansion is complete
+                if self._is_expansion_complete():
                     self.clear_expansion_state()
-                    if self.skip_disabled_count > 0:
-                        self.skip_disabled_count -= 1
-                    # Don't increment word_idx - try this word at the new position
-                    continue
+                    return SingleWordMatchResult(True, True, False)
+                return SingleWordMatchResult(True, False, False)
             else:
-                # Not in an expansion - try to start one or match normally
-                speakable_words = self.parsed_script.speakable_words
-                sw = speakable_words[pos] if pos < len(
-                    speakable_words) else None
+                # Word doesn't match any remaining expansion
+                # Expansion ended early - advance position and try this word at next pos
+                self.clear_expansion_state()
 
-                if sw and sw.is_expansion and sw.all_expansions:
-                    # This is an expandable token - start expansion matching
-                    self._start_expansion_matching(pos)
-                    if self._filter_expansions_by_word(spoken_word):
-                        debug_log.log_server_word(
-                            pos, self.words[pos],
-                            f"exp_start \"{spoken_norm}\" remaining={len(self.active_expansions)}"
-                        )
-                        matched = True
-                        last_matched_spoken = spoken_word
-                        consecutive_misses = 0
-                        word_idx += 1
+        # Not in an expansion - try to start one or match normally
+        speakable_words = self.parsed_script.speakable_words
 
-                        # Check if single-word expansion is complete
-                        if self._is_expansion_complete():
-                            debug_log.log_server_word(
-                                pos, self.words[pos], "exp_complete_1word")
-                            pos += 1
-                            positions_advanced += 1
-                            self.clear_expansion_state()
-                            if self.skip_disabled_count > 0:
-                                self.skip_disabled_count -= 1
-                    else:
-                        # First word doesn't match any expansion - clear and fall through
+        if optimistic_position < len(speakable_words):
+            sw = speakable_words[optimistic_position]
+            if sw.is_expansion:
+                # This is an expandable token - start expansion matching
+                self._start_expansion_matching(optimistic_position)
+                if self._filter_expansions_by_word(spoken_norm):
+                    # Check if single-word expansion is complete
+                    if self._is_expansion_complete():
                         self.clear_expansion_state()
+                        return SingleWordMatchResult(True, True, False)
+                    return SingleWordMatchResult(True, False, False)
                 else:
-                    # Regular word - try direct matching
-                    if self._word_matches_at_position(spoken_word, pos):
-                        debug_log.log_server_word(
-                            pos, self.words[pos], f"match \"{spoken_norm}\"")
-                        pos += 1
-                        positions_advanced += 1
-                        matched = True
-                        last_matched_spoken = spoken_word
-                        consecutive_misses = 0
-                        word_idx += 1
-                        if self.skip_disabled_count > 0:
-                            self.skip_disabled_count -= 1
+                    # First word doesn't match any expansion - clear and fall through
+                    self.clear_expansion_state()
+            else:
+                # Regular word - try direct matching
+                # Exact match
+                if spoken_norm == sw or fuzz.ratio(spoken_norm, sw.text) >= self.match_threshold:
+                    return SingleWordMatchResult(True, True, False)
 
-                # Try skipping script words if no match yet (up to max_skip_distance)
-                if not matched and skip_allowed:
-                    for skip_count in range(1, self.max_skip_distance + 1):
-                        skip_pos = pos + skip_count
-                        if skip_pos >= len(self.words):
-                            break
-                        if self._word_matches_at_position(spoken_word, skip_pos):
-                            # Log skipped words
-                            for i in range(skip_count):
-                                debug_log.log_server_word(
-                                    pos +
-                                    i, self.words[pos +
-                                                  i], f"skip{skip_count}_missed"
-                                )
-                            msg = f"skip{skip_count}_match \"{spoken_norm}\""
-                            debug_log.log_server_word(
-                                skip_pos, self.words[skip_pos], msg)
-                            # Check if the skipped-to position starts an expansion
-                            sw_skip = self.parsed_script.speakable_words[skip_pos] \
-                                if skip_pos < len(self.parsed_script.speakable_words) else None
-                            if sw_skip and sw_skip.is_expansion and sw_skip.all_expansions:
-                                self._start_expansion_matching(skip_pos)
-                                self._filter_expansions_by_word(spoken_word)
-                                if self._is_expansion_complete():
-                                    pos = skip_pos + 1
-                                    positions_advanced += skip_count + 1
-                                    self.clear_expansion_state()
-                                else:
-                                    pos = skip_pos
-                                    positions_advanced += skip_count
-                            else:
-                                pos = skip_pos + 1
-                                positions_advanced += skip_count + 1
-                            matched = True
-                            last_matched_spoken = spoken_word
-                            consecutive_misses = 0
-                            word_idx += 1
-                            break
+        if self._is_filler_word(spoken_norm):
+            return SingleWordMatchResult(True, False, True)
 
-            if not matched:
-                # Word doesn't match - continue trying subsequent words
-                # Don't break early - process all words to behave same as word-by-word updates
-                consecutive_misses += 1
-                debug_log.log_server_word(
-                    pos, self.words[pos] if pos < len(self.words) else "?",
-                    f"no_match \"{spoken_norm}\" miss#{consecutive_misses}"
+        # Skip repeated words (same word spoken twice in a row)
+        if self.last_matched_spoken and spoken_norm == self._normalize_word(self.last_matched_spoken):
+            return SingleWordMatchResult(True, False, True)
+
+        return SingleWordMatchResult(False, False, False)
+
+    def _match_words_with_skipping(self) -> ManyWordMatchResult:
+        def try_matching(variant_name: str, optimism_mode: int, tmp_optimistic_position: int):
+            speakable_words = self.parsed_script.speakable_words
+            print(
+                f"Skip detection ({variant_name}): Current word queue: '{' '.join(self.word_queue)}'"
+            )
+
+            skip_count: int = 0
+            match_count: int = 0
+            advance_count: int = 0
+
+            reset_queue: list[str] = []
+            reset_expansion_state = self._expansion_matcher.clone()
+
+            previous_skip_count: int = -1
+            previous_match_count: int = -1
+            while (
+                # While there are some words left to process
+                bool(self.word_queue)
+                # And we're allowed to skip words
+                and skip_count <= self.max_skip_distance
+                # And we're making some progress
+                and (skip_count > previous_skip_count or match_count > previous_match_count)
+                # And we're in-bounds of the script
+                and tmp_optimistic_position < len(speakable_words)
+            ):
+                previous_skip_count = skip_count
+                previous_match_count = match_count
+
+                spoken_word = self.word_queue.pop(0)
+                reset_queue.append(spoken_word)
+
+                sw = speakable_words[tmp_optimistic_position]
+
+                # If the current script word is longer than the current spoken word,
+                # double check to see if combining the current and next spoken words
+                # matches the current script word.
+                # (e.g. ["every", "thing"] -> "everything")
+                #
+                # We know we're calling this after failing to match a single word in
+                # the caller of this function. So we're safe to try to match longer
+                # words right away.
+                if bool(self.word_queue) and not sw.is_expansion and len(sw.text) >= len(spoken_word) * 1.5:
+                    next_spoken_word = self.word_queue[0]
+                    print(
+                        f"Skip detection ({variant_name}): Testing compound spoken '{spoken_word + next_spoken_word}' against scripted '{sw.text}'"
+                    )
+                    if sw.text == spoken_word + next_spoken_word:
+                        self.word_queue.pop(0)
+                        match_count += 1 + skip_count
+                        advance_count += 1
+                        tmp_optimistic_position += 1
+                        self.last_matched_spoken = None
+                        # We matched a word, so clear the skip state and return
+                        skip_count = 0
+                        break
+
+                print(
+                    f"Skip detection ({variant_name}): Testing spoken '{spoken_word}' against scripted '{sw.text}'"
                 )
-                word_idx += 1
-                # Reset consecutive misses after a while to allow recovery
-                if consecutive_misses >= max_consecutive_misses:
-                    consecutive_misses = 0
 
-        return positions_advanced
+                # Try to skip over the odd mismatched word (which can be a result of
+                # the speaker mispeaking or the transcription picking the wrong word
+                # compared to what the speaker actually spoke)
+                match_result = self._match_single_word(
+                    spoken_word, tmp_optimistic_position)
+                # Did we find a matching word?
+                if match_result.matched:
+                    self.last_matched_spoken = spoken_word
+
+                    match_count += 1 + skip_count
+
+                    if match_result.advanced:
+                        advance_count += 1
+                        tmp_optimistic_position += 1
+
+                    # We matched a word, so clear the skip state and return
+                    skip_count = 0
+                    break
+                else:
+                    # Skip one word
+                    skip_count += 1
+                    advance_count += optimism_mode
+                    tmp_optimistic_position += optimism_mode
+                    self.last_matched_spoken = None
+
+                    if sw.is_expansion:
+                        self.clear_expansion_state()
+
+            if skip_count > 0:
+                self.word_queue = reset_queue + self.word_queue
+                self._expansion_matcher = reset_expansion_state
+                advance_count -= skip_count * optimism_mode
+                skip_count = 0
+
+            print(
+                f"Skip detection ({variant_name}): Final word queue: '{str(list(self.word_queue))}'"
+            )
+
+            return ManyWordMatchResult(match_count, advance_count)
+
+        # Offset starting position in the script
+        # Technically this mechanism allows a slip of 2 * max_skip_distance but who cares
+        for offset in range(0, self.max_skip_distance + 1):
+            # Transcript and Script words skipped together
+            result = try_matching(
+                f"T+S[{offset}]", 1, self.optimistic_position + offset)
+            if result.matches > 0:
+                return ManyWordMatchResult(result.matches, result.advances + offset)
+
+            # Only transcript words skipped
+            result = try_matching(
+                f"T@S[{offset}]", 0, self.optimistic_position + offset)
+            if result.matches > 0:
+                return ManyWordMatchResult(result.matches, result.advances + offset)
+
+        return ManyWordMatchResult(0, 0)
+
+    def detect_jump(self) -> tuple[int, bool]:
+        """
+        Validate current position using window-based fuzzy matching.
+        Called periodically to catch errors and detect backtracks.
+
+        Only triggers corrections when there's significant deviation (>2 words)
+        from the expected position. This prevents repeated words from causing
+        false backtrack detection.
+
+        Returns:
+            Tuple of (validated_position, is_backtrack)
+        """
+        # self.words_since_validation = 0
+
+        # if not transcription.strip():
+        #     return self.optimistic_position, False
+
+        # # Don't validate with very short transcripts - not enough context
+        # # to reliably determine position (especially with repeated words)
+        # transcript_words: list[str] = [
+        #     w for w in transcription.split() if w.strip()]
+        # if len(transcript_words) < 3:
+        #     return self.optimistic_position, False
+
+        # # Use existing window-based matching for validation
+        # best_index: int
+        # confidence: float
+        # best_index, confidence = self._find_best_match(transcription)
+
+        # if confidence < self.match_threshold:
+        #     return self.optimistic_position, False
+
+        # # Calculate deviation from optimistic position
+        # position_diff: int = self.optimistic_position - best_index
+
+        # # If deviation is small (≤2 words), trust the optimistic position
+        # # This prevents repeated words from causing false corrections
+        # if abs(position_diff) <= 2:
+        #     return self.optimistic_position, False
+
+        # # Before considering a backtrack, check if the transcript words
+        # # match what we expect at/near the optimistic position.
+        # # If they do, trust the optimistic position.
+        # transcript_matches: bool = (
+        #     self._transcript_matches_position(
+        #         transcript_words, self.optimistic_position
+        #     )
+        # )
+        # if transcript_matches:
+        #     return self.optimistic_position, False
+
+        # # Reject jumps that are too large - prevents jumping to similar sentences
+        # # far away in the script (e.g., repeated phrases in different paragraphs)
+        # jump_distance: int = abs(position_diff)
+        # if jump_distance > self.max_jump_distance:
+        #     return self.optimistic_position, False
+
+        # # Check for backtrack - only if validated position is significantly behind
+        # #
+        # # Backtrack conditions (all must be true):
+        # # 1. best_index < current_word_index - backtrack_threshold
+        # #    (validated position is significantly behind the furthest we've reached)
+        # # 2. current_word_index > 0
+        # #    (we've actually made forward progress)
+        # # 3. position_diff > 2
+        # #    (optimistic is significantly ahead of validated - confirms mismatch)
+
+        # cond1: bool = best_index < self.current_word_index - self.jump_threshold
+        # cond2: bool = self.current_word_index > 0
+        # cond3: bool = position_diff > 2
+
+        # is_backtrack: bool = cond1 and cond2 and cond3
+
+        # if is_backtrack:
+        #     # User went back - but they've continued speaking past the backtrack point.
+        #     # best_index is where the matching WINDOW starts, not necessarily where
+        #     # the first transcript word matches. We need to find where the first
+        #     # transcript word actually matches within the window.
+        #     first_word: str = self._normalize_word(transcript_words[0])
+        #     transcript_start_offset: int = 0
+        #     for offset in range(min(self.window_size, len(self.words) - best_index)):
+        #         if self._word_matches(first_word, self.words[best_index + offset]):
+        #             transcript_start_offset = offset
+        #             break
+
+        #     # The actual transcript start in the script
+        #     actual_start: int = best_index + transcript_start_offset
+        #     # Position after speaking all transcript words
+        #     adjusted_position: int = min(
+        #         actual_start + len(transcript_words),
+        #         len(self.words) - 1 if self.words else 0
+        #     )
+
+        #     old_pos: int = self.optimistic_position
+        #     words_in_range: list[str] = self.words[adjusted_position:min(
+        #         adjusted_position+3, len(self.words))]
+        #     debug_log.log_server_position_update(
+        #         old_pos, adjusted_position, words_in_range,
+        #         f"BACKTRACK best_idx={best_index} + transcript_len={len(transcript_words)}"
+        #     )
+
+        #     self.optimistic_position = adjusted_position
+        #     self.current_word_index = adjusted_position
+        #     # Keep transcript to continue from here
+        #     self.last_transcription = transcription
+        #     # Clear expansion state - we're at a new position, any in-progress expansion is invalid
+        #     self.clear_expansion_state()
+        #     return adjusted_position, True
+
+        # # Check for forward jump - user skipped ahead in the script
+        # # position_diff < 0 means best_index > optimistic_position (user is ahead)
+        # is_forward_jump: bool = (
+        #     position_diff < -self.jump_threshold and
+        #     best_index > self.current_word_index
+        # )
+
+        # if is_forward_jump:
+        #     # User jumped forward - adjust to where they actually are
+        #     # Find where the first transcript word actually matches within the window
+        #     first_word = self._normalize_word(transcript_words[0])
+        #     transcript_start_offset = 0
+        #     for offset in range(min(self.window_size, len(self.words) - best_index)):
+        #         if self._word_matches(first_word, self.words[best_index + offset]):
+        #             transcript_start_offset = offset
+        #             break
+
+        #     actual_start = best_index + transcript_start_offset
+        #     adjusted_position = min(
+        #         actual_start + len(transcript_words),
+        #         len(self.words) - 1 if self.words else 0
+        #     )
+
+        #     old_pos = self.optimistic_position
+        #     words_in_range = self.words[adjusted_position:min(
+        #         adjusted_position+3, len(self.words))]
+        #     debug_log.log_server_position_update(
+        #         old_pos, adjusted_position, words_in_range,
+        #         f"FORWARD_JUMP best_idx={best_index} + transcript_len={len(transcript_words)}"
+        #     )
+
+        #     self.optimistic_position = adjusted_position
+        #     self.current_word_index = adjusted_position
+        #     self.last_transcription = transcription
+        #     # Clear expansion state - we're at a new position, any in-progress expansion is invalid
+        #     self.clear_expansion_state()
+        #     # Return True for is_backtrack to trigger UI update (it's really a "jump")
+        #     return adjusted_position, True
+
+        # if position_diff > 5:
+        #     # Optimistic got too far ahead - pull back
+        #     # Also adjust for transcript length
+        #     adjusted_position = min(
+        #         best_index + len(transcript_words),
+        #         len(self.words) - 1 if self.words else 0
+        #     )
+        #     old_pos = self.optimistic_position
+        #     words_in_range = self.words[adjusted_position:min(
+        #         adjusted_position+3, len(self.words))]
+        #     debug_log.log_server_position_update(
+        #         old_pos, adjusted_position, words_in_range,
+        #         f"PULL_BACK best_idx={best_index} + transcript_len={len(transcript_words)}"
+        #     )
+        #     self.optimistic_position = adjusted_position
+        #     self.current_word_index = adjusted_position
+        #     self.last_transcription = transcription
+        #     # Clear expansion state - we're at a new position, any in-progress expansion is invalid
+        #     self.clear_expansion_state()
+
+        # elif position_diff < -5:
+        #     # Optimistic fell behind - catch up
+        #     adjusted_position = min(
+        #         best_index + len(transcript_words),
+        #         len(self.words) - 1 if self.words else 0
+        #     )
+        #     old_pos = self.optimistic_position
+        #     words_in_range = self.words[adjusted_position:min(
+        #         adjusted_position+3, len(self.words))]
+        #     debug_log.log_server_position_update(
+        #         old_pos, adjusted_position, words_in_range,
+        #         f"CATCH_UP best_idx={best_index} + transcript_len={len(transcript_words)}"
+        #     )
+        #     self.optimistic_position = adjusted_position
+        #     self.current_word_index = adjusted_position
+        #     self.last_transcription = transcription
+        #     # Clear expansion state - we're at a new position, any in-progress expansion is invalid
+        #     self.clear_expansion_state()
+
+        # return self.optimistic_position, False
+        return (0, False)
 
     def _find_best_match(self, spoken_words: str) -> tuple[int, float]:
         """
@@ -583,297 +870,39 @@ class ScriptTracker:
                 best_score = score
                 best_index = i
 
-        # logger.debug(
-        #     "[FIND BEST MATCH] Result: best_index=%d, best_score=%.1f",
-        #     best_index, best_score
-        # )
-
         return best_index, best_score
 
-    def update(self, transcription: str, is_partial: bool = True) -> ScriptPosition:
+    def _transcript_matches_position(self, transcript_words: list[str], position: int) -> bool:
         """
-        Update position based on new transcription.
-
-        Uses a two-track approach:
-        1. Optimistic: Advance word-by-word for immediate UI response
-        2. Validation: Triggered to catch errors/backtracks
-
-        Args:
-            transcription: The transcribed text
-            is_partial: True if this is a partial (in-progress) result
-
-        Returns:
-            Updated ScriptPosition (uses optimistic position for responsiveness)
+        Check if the transcript words match the script around the given position.
+        Used to verify if the optimistic position is reasonable.
         """
+        if not transcript_words or position >= len(self.words):
+            return False
 
-        if not transcription.strip():
-            return self.current_position()
+        # Look at a window around the position (a few words before and after)
+        start: int = max(0, position - 3)
+        end: int = min(len(self.words), position + 3)
+        nearby_words: list[str] = self.words[start:end]
 
-        # Extract only the NEW words from the transcription
-        new_words: list[str] = self.extract_new_words(transcription)
+        if not nearby_words:
+            return False
 
-        if not new_words:
-            return self.current_position()
-
-        # Try to advance optimistically based on new words
-        words_advanced: int = self._advance(new_words)
-
-        is_backtrack: bool = False
-
-        if words_advanced > 0:
-            # Update optimistic position
-            self.optimistic_position += words_advanced
-
-            # Track words for validation triggering
-            self.words_since_validation += len(new_words)
-
-            # Only allow validation after every 5 words
-            if self.words_since_validation >= 5:
-                self.allow_validation = True
-
-            # Sync current_word_index with optimistic for display
-            self.current_word_index = self.optimistic_position
-        elif self.active_expansions:
-            # We're in the middle of matching a multi-word expansion (e.g., "1500" ->
-            # "one thousand five hundred"). The position won't advance until the
-            # expansion is complete. Don't trigger validation - trust the expansion
-            # matching process.
-            pass
-        else:
-            # No words matched - this could indicate a backtrack or forward jump!
-            # Immediately validate if we have enough new words to work with
-            if len(new_words) >= 3:
-                _, is_backtrack = self.detect_jump(transcription)
-
-        # Store transcription for next comparison
-        self.last_transcription = transcription
-
-        # Convert speakable index to raw token index for UI
-        raw_index: int = self._speakable_to_raw_index(self.optimistic_position)
-
-        position: ScriptPosition = ScriptPosition(
-            word_index=raw_index,  # Raw token index for UI highlighting
-            line_index=self._word_to_line_index(self.optimistic_position),
-            confidence=100.0 if words_advanced > 0 else 0.0,
-            matched_words=new_words,
-            is_backtrack=is_backtrack,
-            speakable_index=self.optimistic_position  # Internal tracking index
-        )
-
-        # Check if validation is needed (every 5 words)
-        position.is_backtrack = False
-        if self.allow_validation:
-            logger.debug(
-                "[VALIDATION] Triggering validation at position %d",
-                position.word_index
-            )
-            validated_pos, is_backtrack = self.detect_jump(transcription)
-            position.is_backtrack = is_backtrack
-            if position.is_backtrack or validated_pos != position.word_index:
-                # Position was corrected by validation
-                logger.info(
-                    "[VALIDATION RESULT] is_backtrack=%s, validated_pos=%d, "
-                    "original_pos=%d",
-                    is_backtrack, validated_pos, position.word_index
-                )
-                position = self.current_position()
-                position.is_backtrack = is_backtrack
-
-        return position
-
-    def detect_jump(self, transcription: str) -> tuple[int, bool]:
-        """
-        Validate current position using window-based fuzzy matching.
-        Called periodically to catch errors and detect backtracks.
-
-        Only triggers corrections when there's significant deviation (>2 words)
-        from the expected position. This prevents repeated words from causing
-        false backtrack detection.
-
-        Returns:
-            Tuple of (validated_position, is_backtrack)
-        """
-        self.words_since_validation = 0
-        self.allow_validation = False
-
-        if not transcription.strip():
-            return self.optimistic_position, False
-
-        # Don't validate with very short transcripts - not enough context
-        # to reliably determine position (especially with repeated words)
-        transcript_words: list[str] = [
-            w for w in transcription.split() if w.strip()]
-        if len(transcript_words) < 3:
-            return self.optimistic_position, False
-
-        # Use existing window-based matching for validation
-        best_index: int
-        confidence: float
-        best_index, confidence = self._find_best_match(transcription)
-
-        if confidence < self.match_threshold:
-            return self.optimistic_position, False
-
-        # Calculate deviation from optimistic position
-        position_diff: int = self.optimistic_position - best_index
-
-        # If deviation is small (≤2 words), trust the optimistic position
-        # This prevents repeated words from causing false corrections
-        if abs(position_diff) <= 2:
-            return self.optimistic_position, False
-
-        # Before considering a backtrack, check if the transcript words
-        # match what we expect at/near the optimistic position.
-        # If they do, trust the optimistic position.
-        transcript_matches: bool = (
-            self._transcript_matches_position(
-                transcript_words, self.optimistic_position
-            )
-        )
-        if transcript_matches:
-            return self.optimistic_position, False
-
-        # Reject jumps that are too large - prevents jumping to similar sentences
-        # far away in the script (e.g., repeated phrases in different paragraphs)
-        jump_distance: int = abs(position_diff)
-        if jump_distance > self.max_jump_distance:
-            return self.optimistic_position, False
-
-        # Check for backtrack - only if validated position is significantly behind
-        #
-        # Backtrack conditions (all must be true):
-        # 1. best_index < current_word_index - backtrack_threshold
-        #    (validated position is significantly behind the furthest we've reached)
-        # 2. current_word_index > 0
-        #    (we've actually made forward progress)
-        # 3. position_diff > 2
-        #    (optimistic is significantly ahead of validated - confirms mismatch)
-
-        cond1: bool = best_index < self.current_word_index - self.backtrack_threshold
-        cond2: bool = self.current_word_index > 0
-        cond3: bool = position_diff > 2
-
-        is_backtrack: bool = cond1 and cond2 and cond3
-
-        if is_backtrack:
-            # User went back - but they've continued speaking past the backtrack point.
-            # best_index is where the matching WINDOW starts, not necessarily where
-            # the first transcript word matches. We need to find where the first
-            # transcript word actually matches within the window.
-            first_word: str = self._normalize_word(transcript_words[0])
-            transcript_start_offset: int = 0
-            for offset in range(min(self.window_size, len(self.words) - best_index)):
-                if self._word_matches(first_word, self.words[best_index + offset]):
-                    transcript_start_offset = offset
+        # Check if the last few transcript words match any nearby script words
+        # This indicates we're in the right area
+        last_transcript: list[str] = transcript_words[-3:] if len(
+            transcript_words) >= 3 else transcript_words
+        matches: int = 0
+        for tw in last_transcript:
+            tw_norm: str = self._normalize_word(tw)
+            for sw in nearby_words:
+                if self._word_matches(tw_norm, sw):
+                    matches += 1
                     break
 
-            # The actual transcript start in the script
-            actual_start: int = best_index + transcript_start_offset
-            # Position after speaking all transcript words
-            adjusted_position: int = min(
-                actual_start + len(transcript_words),
-                len(self.words) - 1 if self.words else 0
-            )
-
-            old_pos: int = self.optimistic_position
-            words_in_range: list[str] = self.words[adjusted_position:min(
-                adjusted_position+3, len(self.words))]
-            debug_log.log_server_position_update(
-                old_pos, adjusted_position, words_in_range,
-                f"BACKTRACK best_idx={best_index} + transcript_len={len(transcript_words)}"
-            )
-
-            self.optimistic_position = adjusted_position
-            self.current_word_index = adjusted_position
-            # Keep transcript to continue from here
-            self.last_transcription = transcription
-            # Disable skip logic for next 5 words to prevent matching old transcript remnants
-            self.skip_disabled_count = 5
-            # Clear expansion state - we're at a new position, any in-progress expansion is invalid
-            self.clear_expansion_state()
-            return adjusted_position, True
-
-        # Check for forward jump - user skipped ahead in the script
-        # position_diff < 0 means best_index > optimistic_position (user is ahead)
-        is_forward_jump: bool = (
-            position_diff < -self.backtrack_threshold and
-            best_index > self.current_word_index
-        )
-
-        if is_forward_jump:
-            # User jumped forward - adjust to where they actually are
-            # Find where the first transcript word actually matches within the window
-            first_word = self._normalize_word(transcript_words[0])
-            transcript_start_offset = 0
-            for offset in range(min(self.window_size, len(self.words) - best_index)):
-                if self._word_matches(first_word, self.words[best_index + offset]):
-                    transcript_start_offset = offset
-                    break
-
-            actual_start = best_index + transcript_start_offset
-            adjusted_position = min(
-                actual_start + len(transcript_words),
-                len(self.words) - 1 if self.words else 0
-            )
-
-            old_pos = self.optimistic_position
-            words_in_range = self.words[adjusted_position:min(
-                adjusted_position+3, len(self.words))]
-            debug_log.log_server_position_update(
-                old_pos, adjusted_position, words_in_range,
-                f"FORWARD_JUMP best_idx={best_index} + transcript_len={len(transcript_words)}"
-            )
-
-            self.optimistic_position = adjusted_position
-            self.current_word_index = adjusted_position
-            self.last_transcription = transcription
-            # Disable skip logic for next 5 words to prevent matching old transcript remnants
-            self.skip_disabled_count = 5
-            # Clear expansion state - we're at a new position, any in-progress expansion is invalid
-            self.clear_expansion_state()
-            # Return True for is_backtrack to trigger UI update (it's really a "jump")
-            return adjusted_position, True
-
-        if position_diff > 5:
-            # Optimistic got too far ahead - pull back
-            # Also adjust for transcript length
-            adjusted_position = min(
-                best_index + len(transcript_words),
-                len(self.words) - 1 if self.words else 0
-            )
-            old_pos = self.optimistic_position
-            words_in_range = self.words[adjusted_position:min(
-                adjusted_position+3, len(self.words))]
-            debug_log.log_server_position_update(
-                old_pos, adjusted_position, words_in_range,
-                f"PULL_BACK best_idx={best_index} + transcript_len={len(transcript_words)}"
-            )
-            self.optimistic_position = adjusted_position
-            self.current_word_index = adjusted_position
-            self.last_transcription = transcription
-            # Clear expansion state - we're at a new position, any in-progress expansion is invalid
-            self.clear_expansion_state()
-
-        elif position_diff < -5:
-            # Optimistic fell behind - catch up
-            adjusted_position = min(
-                best_index + len(transcript_words),
-                len(self.words) - 1 if self.words else 0
-            )
-            old_pos = self.optimistic_position
-            words_in_range = self.words[adjusted_position:min(
-                adjusted_position+3, len(self.words))]
-            debug_log.log_server_position_update(
-                old_pos, adjusted_position, words_in_range,
-                f"CATCH_UP best_idx={best_index} + transcript_len={len(transcript_words)}"
-            )
-            self.optimistic_position = adjusted_position
-            self.current_word_index = adjusted_position
-            self.last_transcription = transcription
-            # Clear expansion state - we're at a new position, any in-progress expansion is invalid
-            self.clear_expansion_state()
-
-        return self.optimistic_position, False
+        # If most of the recent words match nearby script, trust the position
+        threshold: float = len(last_transcript) * 0.5
+        return matches >= threshold
 
     def _word_to_line_index(self, word_index: int) -> int:
         """Convert a word index to a line index."""
@@ -881,6 +910,16 @@ class ScriptTracker:
             return len(self.lines) - 1 if self.lines else 0
         return self.word_to_line[word_index]
 
+    @property
+    def progress(self) -> float:
+        """Get overall progress through the script (0.0 to 1.0)."""
+        total_raw: int = self.parsed_script.total_raw_tokens
+        if total_raw == 0:
+            return 0.0
+        raw_index: int = self._speakable_to_raw_index(self.current_word_index)
+        return raw_index / total_raw
+
+    @property
     def current_position(self) -> ScriptPosition:
         """Get the current position without updating."""
         raw_index: int = self._speakable_to_raw_index(self.current_word_index)
@@ -891,70 +930,6 @@ class ScriptTracker:
             speakable_index=self.current_word_index
         )
 
-    def reset(self) -> None:
-        """Reset tracking to the beginning of the script."""
-        self.current_word_index = 0
-        # Reset optimistic state
-        self.optimistic_position = 0
-        self.last_transcription = ""
-        self.words_since_validation = 0
-        self.allow_validation = False
-        self.skip_disabled_count = 0
-        # Reset expansion state
-        self.clear_expansion_state()
-
-    def jump_to(self, word_index: int) -> None:
-        """Jump to a specific position in the script."""
-        word_index = max(0, min(word_index, len(
-            self.words) - 1)) if self.words else 0
-        self.current_word_index = word_index
-        # Sync optimistic state
-        self.optimistic_position = word_index
-        self.last_transcription = ""
-        self.words_since_validation = 0
-        self.allow_validation = False
-        self.skip_disabled_count = 0
-        # Clear expansion state - we're at a new position, any in-progress expansion is invalid
-        self.clear_expansion_state()
-
-    def get_display_lines(
-        self,
-        past_lines: int = 1,
-        future_lines: int = 10
-    ) -> tuple[list[ScriptLine], int, int]:
-        """
-        Get lines to display around the current position.
-
-        Args:
-            past_lines: Number of lines before current to show
-            future_lines: Number of lines after current to show
-
-        Returns:
-            Tuple of (lines_to_display, current_line_index_in_list, current_word_offset)
-        """
-        current_line: int = self._word_to_line_index(self.current_word_index)
-
-        start_line: int = max(0, current_line - past_lines)
-        end_line: int = min(len(self.lines), current_line + future_lines + 1)
-
-        display_lines: list[ScriptLine] = self.lines[start_line:end_line]
-        current_in_display: int = current_line - start_line
-
-        # Calculate word offset within current line
-        word_offset: int
-        if current_line < len(self.lines):
-            line: ScriptLine = self.lines[current_line]
-            word_offset = self.current_word_index - line.word_start_index
-        else:
-            word_offset = 0
-
-        return display_lines, current_in_display, word_offset
-
     @property
-    def progress(self) -> float:
-        """Get overall progress through the script (0.0 to 1.0)."""
-        total_raw: int = self.parsed_script.total_raw_tokens
-        if total_raw == 0:
-            return 0.0
-        raw_index: int = self._speakable_to_raw_index(self.current_word_index)
-        return raw_index / total_raw
+    def allow_jump_detection(self) -> bool:
+        return len(self.word_queue) >= 5

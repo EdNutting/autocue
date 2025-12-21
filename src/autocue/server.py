@@ -236,11 +236,18 @@ class WebServer:
 
     async def _handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connections for real-time updates."""
+        import time
+        start_time = time.time()
+        print(f"[WS] Connection attempt received at {start_time}")
+
         ws = web.WebSocketResponse()
+        prepare_start = time.time()
         await ws.prepare(request)
+        print(f"[WS] prepare() took {time.time() - prepare_start:.3f}s")
 
         self.websockets.add(ws)
-        print(f"WebSocket connected. Total: {len(self.websockets)}")
+        print(
+            f"[WS] WebSocket connected in {time.time() - start_time:.3f}s. Total: {len(self.websockets)}")
 
         try:
             # Send current state
@@ -562,11 +569,33 @@ class WebServer:
 
     async def start(self) -> None:
         """Start the web server."""
+        import asyncio
+        import time
+        start_time = time.time()
+        print(f"[SERVER] Starting web server setup at {start_time}")
+
         self.runner = web.AppRunner(self.app)
+        setup_start = time.time()
         await self.runner.setup()
+        print(f"[SERVER] runner.setup() took {time.time() - setup_start:.3f}s")
+
+        site_create_start = time.time()
         site: web.TCPSite = web.TCPSite(self.runner, self.host, self.port)
+        print(
+            f"[SERVER] TCPSite created in {time.time() - site_create_start:.3f}s")
+
+        site_start_time = time.time()
         await site.start()
+        print(
+            f"[SERVER] site.start() took {time.time() - site_start_time:.3f}s")
+        print(
+            f"[SERVER] Total server start time: {time.time() - start_time:.3f}s")
         print(f"Web server running at http://{self.host}:{self.port}")
+
+        # Give event loop a moment to start accepting connections
+        print("[SERVER] Yielding to event loop...")
+        await asyncio.sleep(0.1)
+        print(f"[SERVER] Server should be fully ready now at {time.time()}")
 
     async def stop(self) -> None:
         """Stop the web server."""

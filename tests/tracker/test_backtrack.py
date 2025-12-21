@@ -38,7 +38,6 @@ class TestRepeatedWords:
 
         # Validation with "the lazy" - matches position 3-4
         # Should trust optimistic since deviation is small
-        tracker.allow_validation = True
         is_backtrack: bool
         _validated_pos, is_backtrack = tracker.detect_jump(
             "the lazy dog")

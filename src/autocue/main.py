@@ -159,8 +159,16 @@ class AutocueApp:
         print(f"  Open http://{self.host}:{self.port} in your browser")
         print("  Press Ctrl+C to stop\n")
 
-        # Main processing loop
-        await self._process_loop()
+        # Main processing loop - run as background task to keep event loop responsive
+        import time
+        print(f"[DEBUG] Creating process loop task at {time.time()}")
+        process_task = asyncio.create_task(self._process_loop())
+
+        # Wait for the process task to complete (only happens on shutdown)
+        try:
+            await process_task
+        except asyncio.CancelledError:
+            print("[DEBUG] Process task cancelled")
 
     async def _process_loop(self) -> None:
         """Main loop that processes audio and updates position."""
@@ -169,7 +177,14 @@ class AutocueApp:
         assert self.transcriber is not None, "Transcriber must be initialized"
         current_script: str = ""
 
+        import time
+        loop_start = time.time()
+        iteration = 0
+
         while self.running:
+            iteration += 1
+            if iteration == 1:
+                print(f"[DEBUG] First loop iteration starting at {time.time()}, {time.time() - loop_start:.3f}s after loop entry")
             # Check if script has changed
             if self.server.script_text and self.server.script_text != current_script:
                 current_script = self.server.script_text
@@ -178,7 +193,7 @@ class AutocueApp:
                     window_size=self.tracking_settings.get("window_size", 8),
                     match_threshold=self.tracking_settings.get(
                         "match_threshold", 65.0),
-                    backtrack_threshold=self.tracking_settings.get(
+                    jump_threshold=self.tracking_settings.get(
                         "backtrack_threshold", 3),
                     max_jump_distance=self.tracking_settings.get(
                         "max_jump_distance", 50)
@@ -228,11 +243,13 @@ class AutocueApp:
                 else:
                     await self.stop_transcript()
 
-            # Process audio
-            audio_chunk: bytes | None = self.audio.get_chunk(timeout=0.05)
+            # Process audio - run blocking get_chunk in thread pool to keep event loop responsive
+            loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
+            audio_chunk: bytes | None = await loop.run_in_executor(
+                None, self.audio.get_chunk, 0.05
+            )
             if audio_chunk and self.tracker:
-                # Run blocking Vosk transcription in thread pool to keep event loop responsive
-                loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
+                # Run blocking Vosk transcription in thread pool
                 result = await loop.run_in_executor(
                     None, self.transcriber.process_audio, audio_chunk
                 )
@@ -259,17 +276,8 @@ class AutocueApp:
                         word_offset != self._last_sent_word_offset
                     )
 
-                    if position_changed or position.is_backtrack:
-                        # Log what we're sending to the client
-                        word_at_pos: str = (
-                            self.tracker.words[position.word_index]
-                            if position.word_index < len(self.tracker.words)
-                            else "END"
-                        )
-                        debug_log.log_server_word(
-                            position.word_index, word_at_pos,
-                            f"SEND line={position.line_index} offset={word_offset}"
-                        )
+                    # Send update if position changed OR if we have partial transcript to show
+                    if position_changed or result.is_partial:
 
                         # Send update to clients
                         await self.server.send_position(
@@ -277,14 +285,15 @@ class AutocueApp:
                             line_index=position.line_index,
                             word_offset=word_offset,
                             confidence=position.confidence,
-                            is_backtrack=position.is_backtrack,
+                            is_backtrack=False,  # TODO: Fix this
                             transcript=result.text if result.is_partial else ""
                         )
 
-                        # Update last sent position
-                        self._last_sent_word_index = position.word_index
-                        self._last_sent_line_index = position.line_index
-                        self._last_sent_word_offset = word_offset
+                        # Update last sent position (only if it actually changed)
+                        if position_changed:
+                            self._last_sent_word_index = position.word_index
+                            self._last_sent_line_index = position.line_index
+                            self._last_sent_word_offset = word_offset
 
             # Small sleep to prevent CPU spinning
             await asyncio.sleep(0.01)

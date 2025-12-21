@@ -429,10 +429,10 @@ class TestExpansionValidationBug:
 
         # "one" - first word of expansion
         result: ScriptPosition = tracker.update("some text and one")
-        assert result.is_backtrack is False, "First word of expansion should not cause backtrack"
+        assert result.is_jump is False, "First word of expansion should not cause backtrack"
 
         # Check if validation triggered
-        if tracker.allow_validation:
+        if tracker.allow_jump_detection:
             was_backtrack: bool
             _validated_pos, was_backtrack = tracker.detect_jump(
                 "some text and one")
@@ -440,18 +440,18 @@ class TestExpansionValidationBug:
 
         # "thousand" - second word of expansion
         result = tracker.update("some text and one thousand")
-        assert result.is_backtrack is False, "Second word of expansion should not cause backtrack"
+        assert result.is_jump is False, "Second word of expansion should not cause backtrack"
 
-        if tracker.allow_validation:
+        if tracker.allow_jump_detection:
             _validated_pos, was_backtrack = tracker.detect_jump(
                 "some text and one thousand")
             assert was_backtrack is False, "Validation during expansion should not cause backtrack"
 
         # "five" - third word of expansion
         result = tracker.update("some text and one thousand five")
-        assert result.is_backtrack is False, "Third word of expansion should not cause backtrack"
+        assert result.is_jump is False, "Third word of expansion should not cause backtrack"
 
-        if tracker.allow_validation:
+        if tracker.allow_jump_detection:
             _validated_pos, was_backtrack = tracker.detect_jump(
                 "some text and one thousand five"
             )
@@ -459,7 +459,7 @@ class TestExpansionValidationBug:
 
         # "hundred" - fourth word of expansion (completes it)
         result = tracker.update("some text and one thousand five hundred")
-        assert result.is_backtrack is False, "Completing expansion should not cause backtrack"
+        assert result.is_jump is False, "Completing expansion should not cause backtrack"
 
         # Position should have advanced past "1500"
         assert tracker.optimistic_position > pos_after_and, \
@@ -476,13 +476,12 @@ class TestExpansionValidationBug:
 
         # Advance to position before the number
         tracker.update("prefix")
-        tracker.allow_validation = False
 
         # Start expansion matching - position won't advance until complete
         tracker.update("prefix one")
 
         # Validation should NOT be triggered during active expansion
-        assert tracker.allow_validation is False or tracker.active_expansions, \
+        assert tracker.allow_jump_detection is False or tracker.active_expansions, \
             "Should not trigger validation while actively matching expansion"
 
     def test_six_word_expansion_no_backtrack(self) -> None:
@@ -504,7 +503,7 @@ class TestExpansionValidationBug:
         for word in words:
             transcript += f" {word}"
             result: ScriptPosition = tracker.update(transcript)
-            assert result.is_backtrack is False, \
+            assert result.is_jump is False, \
                 f"Should not backtrack after speaking '{word}' in expansion"
 
         # After complete expansion, position should have advanced
@@ -637,4 +636,4 @@ class TestExpansionStateClearingOnPositionChange:
         # Should successfully match "as" (pos 4) and "written" (pos 5), ending at 6
         # Should be at position after "written"
         assert tracker.optimistic_position == 6
-        assert not result.is_backtrack
+        assert not result.is_jump
