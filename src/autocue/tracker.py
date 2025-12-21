@@ -11,6 +11,7 @@ from rapidfuzz import fuzz
 import markdown
 
 from . import debug_log
+from .expansion_matcher import ExpansionMatcher
 from .script_parser import (
     ParsedScript, parse_script, normalize_word,
     speakable_to_raw_index, get_speakable_word_list
@@ -111,10 +112,19 @@ class ScriptTracker:
         # This prevents old transcript words from incorrectly matching future positions
         self.skip_disabled_count = 0  # Number of words to disable skip for
 
-        # Dynamic expansion matching state
-        # When matching an expandable token, track which expansions are still valid
-        self.active_expansions: List[List[str]] = []  # Currently valid expansions
-        self.expansion_match_position = 0  # How many words matched in current expansion
+        # Dynamic expansion matching (handles numbers/punctuation alternatives)
+        self._expansion_matcher = ExpansionMatcher(self.parsed_script)
+
+    # Property accessors for expansion state (delegated to ExpansionMatcher)
+    @property
+    def active_expansions(self) -> List[List[str]]:
+        """Currently valid expansions being matched."""
+        return self._expansion_matcher.active_expansions
+
+    @property
+    def expansion_match_position(self) -> int:
+        """Position within the current expansion being matched."""
+        return self._expansion_matcher.match_position
 
     def _build_lines_from_text(self, text: str):
         """Build ScriptLine list and word_to_line mapping from raw text.
@@ -153,94 +163,24 @@ class ScriptTracker:
         return speakable_to_raw_index(self.parsed_script, speakable_idx)
 
     def _get_expansion_first_words(self, speakable_idx: int) -> List[str]:
-        """Get all possible FIRST words that could start matching at this position.
-
-        For expandable tokens, returns the first word of each possible expansion.
-        For regular words, returns just that word.
-
-        Example for "100": returns ["one", "a"] (from "one hundred", "a hundred", "one zero zero")
-        """
-        if speakable_idx >= len(self.parsed_script.speakable_words):
-            return []
-
-        sw = self.parsed_script.speakable_words[speakable_idx]
-
-        if sw.is_expansion and sw.all_expansions:
-            # Get the first word from each expansion
-            first_words = []
-            for exp in sw.all_expansions:
-                if exp:
-                    word = exp[0].lower()
-                    if word not in first_words:
-                        first_words.append(word)
-            return first_words
-
-        # For regular words, just return the word itself
-        return [sw.text]
+        """Get all possible FIRST words that could start matching at this position."""
+        return self._expansion_matcher.get_first_words(speakable_idx)
 
     def _start_expansion_matching(self, speakable_idx: int) -> bool:
-        """Initialize expansion matching state for an expandable token.
-
-        Returns True if this is an expandable token with expansions.
-        """
-        if speakable_idx >= len(self.parsed_script.speakable_words):
-            return False
-
-        sw = self.parsed_script.speakable_words[speakable_idx]
-
-        if sw.is_expansion and sw.all_expansions:
-            self.active_expansions = [exp[:] for exp in sw.all_expansions]  # Copy
-            self.expansion_match_position = 0
-            return True
-
-        self.active_expansions = []
-        self.expansion_match_position = 0
-        return False
+        """Initialize expansion matching state for an expandable token."""
+        return self._expansion_matcher.start(speakable_idx)
 
     def _filter_expansions_by_word(self, spoken_word: str) -> bool:
-        """Filter active expansions to those matching the spoken word at current position.
-
-        Returns True if at least one expansion still matches.
-        """
-        if not self.active_expansions:
-            return False
-
-        spoken_norm = self._normalize_word(spoken_word)
-        if not spoken_norm:
-            return False
-
-        pos = self.expansion_match_position
-        remaining = []
-
-        for exp in self.active_expansions:
-            if pos < len(exp):
-                exp_word = exp[pos].lower()
-                # Check for exact or fuzzy match
-                if spoken_norm == exp_word or fuzz.ratio(spoken_norm, exp_word) >= 75:
-                    remaining.append(exp)
-
-        if remaining:
-            self.active_expansions = remaining
-            self.expansion_match_position += 1
-            return True
-
-        return False
+        """Filter active expansions to those matching the spoken word."""
+        return self._expansion_matcher.filter_by_word(spoken_word)
 
     def _is_expansion_complete(self) -> bool:
         """Check if any active expansion has been fully matched."""
-        if not self.active_expansions:
-            return False
-
-        pos = self.expansion_match_position
-        for exp in self.active_expansions:
-            if pos >= len(exp):
-                return True
-        return False
+        return self._expansion_matcher.is_complete()
 
     def _clear_expansion_state(self):
         """Clear the expansion matching state."""
-        self.active_expansions = []
-        self.expansion_match_position = 0
+        self._expansion_matcher.clear()
 
     def _get_window_text(self, start_index: int) -> str:
         """Get a window of words starting at the given index."""
