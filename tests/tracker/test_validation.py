@@ -2,6 +2,8 @@
 Tests for validation triggering and backtrack detection in ScriptTracker.
 """
 
+from typing import List
+
 import pytest
 from src.autocue.tracker import ScriptTracker
 
@@ -9,14 +11,17 @@ from src.autocue.tracker import ScriptTracker
 class TestValidationTriggering:
     """Tests for validation triggering logic."""
 
-    def test_validation_triggers_after_five_words(self):
+    def test_validation_triggers_after_five_words(self) -> None:
         """Validation should be needed after 5 words spoken."""
-        tracker = ScriptTracker("one two three four five six seven eight")
+        tracker: ScriptTracker = ScriptTracker(
+            "one two three four five six seven eight")
 
         assert tracker.needs_validation is False
 
         # Speak 4 words - no validation yet
-        for text in ["one", "one two", "one two three", "one two three four"]:
+        texts: List[str] = ["one", "one two",
+                            "one two three", "one two three four"]
+        for text in texts:
             tracker.update(text)
         assert tracker.needs_validation is False
 
@@ -24,13 +29,15 @@ class TestValidationTriggering:
         tracker.update("one two three four five")
         assert tracker.needs_validation is True
 
-    def test_validation_resets_counter(self):
+    def test_validation_resets_counter(self) -> None:
         """Validation should reset the word counter."""
-        tracker = ScriptTracker("one two three four five six seven eight nine ten")
+        tracker: ScriptTracker = ScriptTracker(
+            "one two three four five six seven eight nine ten")
 
         # Trigger validation
-        for text in ["one", "one two", "one two three", "one two three four",
-                     "one two three four five"]:
+        texts: List[str] = ["one", "one two", "one two three", "one two three four",
+                            "one two three four five"]
+        for text in texts:
             tracker.update(text)
         assert tracker.needs_validation is True
 
@@ -43,17 +50,18 @@ class TestValidationTriggering:
 class TestBacktrackDetection:
     """Tests for backtrack detection via validation."""
 
-    def test_backtrack_detected_significant_deviation(self):
+    def test_backtrack_detected_significant_deviation(self) -> None:
         """Should detect backtrack only when deviation is significant (>2 words)."""
-        tracker = ScriptTracker(
+        tracker: ScriptTracker = ScriptTracker(
             "The quick brown fox jumps over the lazy dog sits quietly"
         )
 
         # Advance to word 8 (dog)
-        for text in ["the", "the quick", "the quick brown", "the quick brown fox",
-                     "the quick brown fox jumps", "the quick brown fox jumps over",
-                     "the quick brown fox jumps over the",
-                     "the quick brown fox jumps over the lazy"]:
+        texts: List[str] = ["the", "the quick", "the quick brown", "the quick brown fox",
+                            "the quick brown fox jumps", "the quick brown fox jumps over",
+                            "the quick brown fox jumps over the",
+                            "the quick brown fox jumps over the lazy"]
+        for text in texts:
             tracker.update(text)
 
         assert tracker.optimistic_position == 8
@@ -62,28 +70,37 @@ class TestBacktrackDetection:
         # Simulate a real backtrack - user restarts with completely different words
         # that match the beginning of the script, not near position 8
         tracker.needs_validation = True
-        validated_pos, is_backtrack = tracker.validate_position("the quick brown")
+        validated_pos: int
+        is_backtrack: bool
+        validated_pos, is_backtrack = tracker.validate_position(
+            "the quick brown")
 
         assert is_backtrack is True
         # Position should be reset to match "the quick brown" (near position 0-3)
         assert tracker.optimistic_position < 5
 
-    def test_no_backtrack_for_forward_movement(self):
+    def test_no_backtrack_for_forward_movement(self) -> None:
         """Forward movement should not trigger backtrack."""
-        tracker = ScriptTracker("The quick brown fox")
+        tracker: ScriptTracker = ScriptTracker("The quick brown fox")
 
         tracker.update("the quick")
         tracker.needs_validation = True
-        validated_pos, is_backtrack = tracker.validate_position("the quick brown")
+        validated_pos: int
+        is_backtrack: bool
+        validated_pos, is_backtrack = tracker.validate_position(
+            "the quick brown")
 
         assert is_backtrack is False
 
-    def test_no_backtrack_for_small_deviation(self):
+    def test_no_backtrack_for_small_deviation(self) -> None:
         """Small deviations (<=2 words) should not trigger corrections."""
-        tracker = ScriptTracker("The quick brown fox jumps over the lazy dog")
+        tracker: ScriptTracker = ScriptTracker(
+            "The quick brown fox jumps over the lazy dog")
 
         # Advance to position 4 (after "fox")
-        for text in ["the", "the quick", "the quick brown", "the quick brown fox"]:
+        texts: List[str] = ["the", "the quick",
+                            "the quick brown", "the quick brown fox"]
+        for text in texts:
             tracker.update(text)
 
         assert tracker.optimistic_position == 4
@@ -91,6 +108,8 @@ class TestBacktrackDetection:
         # Force validation with transcript that matches around position 3-4
         # (small deviation from optimistic position of 4)
         tracker.needs_validation = True
+        validated_pos: int
+        is_backtrack: bool
         validated_pos, is_backtrack = tracker.validate_position(
             "quick brown fox jumps"
         )

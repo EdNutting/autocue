@@ -2,10 +2,14 @@
 Tests for core parsing functions in the script_parser module.
 """
 
+from typing import List
+
 import pytest
 import markdown
 from src.autocue.script_parser import (
     SILENT_PUNCTUATION,
+    ParsedScript,
+    SpeakableWord,
     normalize_word,
     is_silent_punctuation,
     parse_script,
@@ -17,18 +21,18 @@ from src.autocue.script_parser import (
 class TestNormalizeWord:
     """Tests for the normalize_word function."""
 
-    def test_lowercase_conversion(self):
+    def test_lowercase_conversion(self) -> None:
         """Words should be converted to lowercase."""
         assert normalize_word("Hello") == "hello"
         assert normalize_word("WORLD") == "world"
 
-    def test_punctuation_stripped(self):
+    def test_punctuation_stripped(self) -> None:
         """Punctuation should be stripped from words."""
         assert normalize_word("hello,") == "hello"
         assert normalize_word("world!") == "world"
         assert normalize_word("what?") == "what"
 
-    def test_contractions_handled(self):
+    def test_contractions_handled(self) -> None:
         """Contractions should have apostrophe removed."""
         assert normalize_word("don't") == "dont"
         assert normalize_word("it's") == "its"
@@ -37,7 +41,7 @@ class TestNormalizeWord:
 class TestIsSilentPunctuation:
     """Tests for is_silent_punctuation function."""
 
-    def test_common_punctuation_is_silent(self):
+    def test_common_punctuation_is_silent(self) -> None:
         """Common punctuation marks should be silent."""
         assert is_silent_punctuation(",") is True
         assert is_silent_punctuation(".") is True
@@ -46,12 +50,12 @@ class TestIsSilentPunctuation:
         assert is_silent_punctuation(";") is True
         assert is_silent_punctuation(":") is True
 
-    def test_words_are_not_silent(self):
+    def test_words_are_not_silent(self) -> None:
         """Normal words should not be marked as silent."""
         assert is_silent_punctuation("hello") is False
         assert is_silent_punctuation("world") is False
 
-    def test_expandable_punctuation_not_silent(self):
+    def test_expandable_punctuation_not_silent(self) -> None:
         """Punctuation that expands to words should not be silent."""
         # Note: "&", "/", etc. are not in SILENT_PUNCTUATION
         # The function checks if ALL chars are silent punctuation
@@ -62,47 +66,50 @@ class TestIsSilentPunctuation:
 class TestParseScript:
     """Tests for the main parse_script function."""
 
-    def test_basic_parsing(self):
+    def test_basic_parsing(self) -> None:
         """Basic script parsing should produce correct structure."""
-        script = "Hello world"
-        parsed = parse_script(script)
+        script: str = "Hello world"
+        parsed: ParsedScript = parse_script(script)
 
         assert len(parsed.raw_tokens) == 2
         assert len(parsed.speakable_words) == 2
         assert parsed.raw_tokens[0].text == "Hello"
         assert parsed.speakable_words[0].text == "hello"
 
-    def test_punctuation_expansion_in_parsed(self):
+    def test_punctuation_expansion_in_parsed(self) -> None:
         """Punctuation should be expanded in speakable words."""
-        script = "A & B"
-        html = markdown.markdown(script, extensions=['nl2br', 'sane_lists'])
-        parsed = parse_script(script, html)
+        script: str = "A & B"
+        html: str = markdown.markdown(
+            script, extensions=['nl2br', 'sane_lists'])
+        parsed: ParsedScript = parse_script(script, html)
 
-        words = [sw.text for sw in parsed.speakable_words]
+        words: List[str] = [sw.text for sw in parsed.speakable_words]
         assert "and" in words
 
-    def test_bidirectional_mapping(self):
+    def test_bidirectional_mapping(self) -> None:
         """raw_to_speakable and speakable_to_raw should be inverses."""
-        script = "Hello world"
-        parsed = parse_script(script)
+        script: str = "Hello world"
+        parsed: ParsedScript = parse_script(script)
 
         for raw_idx, speakable_indices in parsed.raw_to_speakable.items():
             for speakable_idx in speakable_indices:
                 assert parsed.speakable_to_raw[speakable_idx] == raw_idx
 
-    def test_expansion_creates_single_speakable_word_with_all_expansions(self):
+    def test_expansion_creates_single_speakable_word_with_all_expansions(self) -> None:
         """Expandable tokens create ONE SpeakableWord with all_expansions set."""
-        script = "A < B"  # "<" expands to ["less", "than"]
-        html = markdown.markdown(script, extensions=['nl2br', 'sane_lists'])
-        parsed = parse_script(script, html)
+        script: str = "A < B"  # "<" expands to ["less", "than"]
+        html: str = markdown.markdown(
+            script, extensions=['nl2br', 'sane_lists'])
+        parsed: ParsedScript = parse_script(script, html)
 
         # Find the speakable words from the "<" expansion
-        expanded_words = [sw for sw in parsed.speakable_words if sw.is_expansion]
+        expanded_words: List[SpeakableWord] = [
+            sw for sw in parsed.speakable_words if sw.is_expansion]
         # Now we create ONE position per expandable token
         assert len(expanded_words) == 1
 
         # The single SpeakableWord should have all_expansions set
-        sw = expanded_words[0]
+        sw: SpeakableWord = expanded_words[0]
         assert sw.all_expansions is not None
         assert len(sw.all_expansions) >= 1
         # First expansion should be ["less", "than"]
@@ -112,26 +119,26 @@ class TestParseScript:
 class TestSpeakableToRawIndex:
     """Tests for speakable_to_raw_index function."""
 
-    def test_normal_mapping(self):
+    def test_normal_mapping(self) -> None:
         """Normal speakable words should map to their raw tokens."""
-        script = "Hello world"
-        parsed = parse_script(script)
+        script: str = "Hello world"
+        parsed: ParsedScript = parse_script(script)
 
         assert speakable_to_raw_index(parsed, 0) == 0
         assert speakable_to_raw_index(parsed, 1) == 1
 
-    def test_past_end_returns_length(self):
+    def test_past_end_returns_length(self) -> None:
         """Index past the end should return len(raw_tokens)."""
-        script = "Hello world"
-        parsed = parse_script(script)
+        script: str = "Hello world"
+        parsed: ParsedScript = parse_script(script)
 
-        result = speakable_to_raw_index(parsed, 100)
+        result: int = speakable_to_raw_index(parsed, 100)
         assert result == len(parsed.raw_tokens)
 
-    def test_negative_index_returns_zero(self):
+    def test_negative_index_returns_zero(self) -> None:
         """Negative index should return 0."""
-        script = "Hello world"
-        parsed = parse_script(script)
+        script: str = "Hello world"
+        parsed: ParsedScript = parse_script(script)
 
         assert speakable_to_raw_index(parsed, -1) == 0
         assert speakable_to_raw_index(parsed, -100) == 0
@@ -140,12 +147,12 @@ class TestSpeakableToRawIndex:
 class TestGetSpeakableWordList:
     """Tests for get_speakable_word_list function."""
 
-    def test_returns_list_of_strings(self):
+    def test_returns_list_of_strings(self) -> None:
         """Should return a simple list of word strings."""
-        script = "Hello world"
-        parsed = parse_script(script)
+        script: str = "Hello world"
+        parsed: ParsedScript = parse_script(script)
 
-        words = get_speakable_word_list(parsed)
+        words: List[str] = get_speakable_word_list(parsed)
         assert isinstance(words, list)
         assert all(isinstance(w, str) for w in words)
         assert words == ["hello", "world"]

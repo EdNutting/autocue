@@ -8,33 +8,34 @@ These tests use real transcript data to verify that the tracker:
 """
 
 from pathlib import Path
+from typing import List, Tuple
 
 import pytest
 
-from src.autocue.tracker import ScriptTracker
+from src.autocue.tracker import ScriptTracker, ScriptPosition
 
 
 class TestTranscriptTracking:
     """Integration tests for tracking with real transcripts."""
 
     @pytest.fixture
-    def number_test_script(self):
+    def number_test_script(self) -> str:
         """Load the number test script."""
-        script_path = Path(__file__).parent.parent.parent / \
+        script_path: Path = Path(__file__).parent.parent.parent / \
             "samples" / "number_test_script.md"
         return script_path.read_text()
 
     @pytest.fixture
-    def number_test_transcript(self):
+    def number_test_transcript(self) -> List[str]:
         """Load and parse the number test transcript, excluding start/end markers."""
-        transcript_path = (
+        transcript_path: Path = (
             Path(__file__).parent.parent.parent / "transcripts" /
             "transcript_20251221_000011.txt"
         )
-        lines = transcript_path.read_text().strip().split("\n")
+        lines: List[str] = transcript_path.read_text().strip().split("\n")
 
         # Filter out the "Transcript started" and "Transcript ended" lines
-        content_lines = []
+        content_lines: List[str] = []
         for line in lines:
             line = line.strip()
             if line.startswith("===") or not line:
@@ -43,38 +44,38 @@ class TestTranscriptTracking:
 
         return content_lines
 
-    def test_transcript_loads_correctly(self, number_test_transcript):
+    def test_transcript_loads_correctly(self, number_test_transcript: List[str]) -> None:
         """Verify transcript is loaded and parsed correctly."""
         assert len(number_test_transcript) > 0
         # First content line should be about "number expansion test"
         assert "number" in number_test_transcript[0].lower()
 
-    def test_script_loads_correctly(self, number_test_script):
+    def test_script_loads_correctly(self, number_test_script: str) -> None:
         """Verify script is loaded correctly."""
         assert len(number_test_script) > 0
         assert "Number Expansion Test Script" in number_test_script
 
-    def test_smooth_tracking_word_by_word(self, number_test_script, number_test_transcript):
+    def test_smooth_tracking_word_by_word(self, number_test_script: str, number_test_transcript: List[str]) -> None:
         """Verify tracking advances smoothly when feeding words one at a time.
 
         The tracking system should handle number format differences between
         transcription and script (e.g., "one hundred" vs "100") and advance
         smoothly through the script.
         """
-        tracker = ScriptTracker(number_test_script)
+        tracker: ScriptTracker = ScriptTracker(number_test_script)
 
         # Build cumulative transcript word by word
-        all_words = []
+        all_words: List[str] = []
         for line in number_test_transcript:
-            words = line.split()
+            words: List[str] = line.split()
             all_words.extend(words)
 
-        max_jump = 0
-        last_position = 0
-        position_history = [0]
+        max_jump: int = 0
+        last_position: int = 0
+        position_history: List[int] = [0]
 
         # Feed every word to simulate word-by-word updates
-        cumulative_text = ""
+        cumulative_text: str = ""
         for word in all_words:
             if cumulative_text:
                 cumulative_text += " " + word
@@ -82,11 +83,11 @@ class TestTranscriptTracking:
                 cumulative_text = word
 
             # Update with cumulative text (tracker compares with last_transcription)
-            pos = tracker.update(cumulative_text)
-            current_position = pos.speakable_index
+            pos: ScriptPosition = tracker.update(cumulative_text)
+            current_position: int = pos.speakable_index
 
             # Calculate jump size
-            jump = current_position - last_position
+            jump: int = current_position - last_position
             if abs(jump) > max_jump:
                 max_jump = abs(jump)
 
@@ -98,39 +99,39 @@ class TestTranscriptTracking:
         assert max_jump <= 5, f"Maximum jump was {max_jump}, expected <= 5"
 
         # Position should have advanced significantly through the script
-        final_progress = tracker.progress
+        final_progress: float = tracker.progress
         assert final_progress > 0.8, f"Final progress was {final_progress:.2%}, expected > 80%"
 
-    def test_smooth_tracking_chunk_by_chunk(self, number_test_script, number_test_transcript):
+    def test_smooth_tracking_chunk_by_chunk(self, number_test_script: str, number_test_transcript: List[str]) -> None:
         """Verify tracking advances smoothly when feeding transcript line by line (chunks).
 
         For chunk updates, jumps should be proportional to the number of words in the chunk.
         We verify that no jump exceeds the chunk size by more than a small margin.
         """
-        tracker = ScriptTracker(number_test_script)
+        tracker: ScriptTracker = ScriptTracker(number_test_script)
 
-        last_position = 0
-        disproportionate_jumps = []
+        last_position: int = 0
+        disproportionate_jumps: List[Tuple[int, int, str]] = []
 
         # Feed transcript line by line (simulating chunks of speech)
-        cumulative_text = ""
+        cumulative_text: str = ""
         for line in number_test_transcript:
             if cumulative_text:
                 cumulative_text += " " + line
             else:
                 cumulative_text = line
 
-            chunk_word_count = len(line.split())
-            pos = tracker.update(cumulative_text)
-            current_position = pos.speakable_index
+            chunk_word_count: int = len(line.split())
+            pos: ScriptPosition = tracker.update(cumulative_text)
+            current_position: int = pos.speakable_index
 
             # Calculate jump size
-            jump = current_position - last_position
+            jump: int = current_position - last_position
 
             # For chunk updates, jump should be approximately equal to chunk size
             # Allow some tolerance for skipped words or minor mismatches
             # A jump should not exceed 1.5x the chunk size (50% tolerance)
-            max_reasonable_jump = max(5, int(chunk_word_count * 1.5))
+            max_reasonable_jump: int = max(5, int(chunk_word_count * 1.5))
             if jump > max_reasonable_jump:
                 disproportionate_jumps.append(
                     (jump, chunk_word_count, line[:40]))
@@ -142,34 +143,34 @@ class TestTranscriptTracking:
             f"Too many disproportionate jumps: {disproportionate_jumps}"
 
         # Position should have advanced significantly
-        final_progress = tracker.progress
+        final_progress: float = tracker.progress
         assert final_progress > 0.8, f"Final progress was {final_progress:.2%}, expected > 80%"
 
-    def test_no_backtracking(self, number_test_script, number_test_transcript):
+    def test_no_backtracking(self, number_test_script: str, number_test_transcript: List[str]) -> None:
         """Verify that tracking never goes backward unexpectedly."""
-        tracker = ScriptTracker(number_test_script)
+        tracker: ScriptTracker = ScriptTracker(number_test_script)
 
-        high_water_mark = 0
-        backtrack_count = 0
-        largest_backtrack = 0
+        high_water_mark: int = 0
+        backtrack_count: int = 0
+        largest_backtrack: int = 0
 
         # Feed transcript word by word
-        all_words = []
+        all_words: List[str] = []
         for line in number_test_transcript:
             all_words.extend(line.split())
 
-        cumulative_text = ""
+        cumulative_text: str = ""
         for word in all_words:
             if cumulative_text:
                 cumulative_text += " " + word
             else:
                 cumulative_text = word
 
-            pos = tracker.update(cumulative_text)
-            current_position = pos.speakable_index
+            pos: ScriptPosition = tracker.update(cumulative_text)
+            current_position: int = pos.speakable_index
 
             if current_position < high_water_mark:
-                backtrack_amount = high_water_mark - current_position
+                backtrack_amount: int = high_water_mark - current_position
                 backtrack_count += 1
                 if backtrack_amount > largest_backtrack:
                     largest_backtrack = backtrack_amount
@@ -182,20 +183,20 @@ class TestTranscriptTracking:
         # Allow a few small backtracks due to speech recognition differences
         assert backtrack_count <= 3, f"Backtrack count was {backtrack_count}, expected <= 3"
 
-    def test_no_forward_jumps(self, number_test_script, number_test_transcript):
+    def test_no_forward_jumps(self, number_test_script: str, number_test_transcript: List[str]) -> None:
         """Verify that tracking never jumps forward unexpectedly."""
-        tracker = ScriptTracker(number_test_script)
+        tracker: ScriptTracker = ScriptTracker(number_test_script)
 
-        large_jump_count = 0
-        largest_forward_jump = 0
+        large_jump_count: int = 0
+        largest_forward_jump: int = 0
 
         # Feed transcript word by word
-        all_words = []
+        all_words: List[str] = []
         for line in number_test_transcript:
             all_words.extend(line.split())
 
-        cumulative_text = ""
-        last_position = 0
+        cumulative_text: str = ""
+        last_position: int = 0
 
         for word in all_words:
             if cumulative_text:
@@ -203,10 +204,10 @@ class TestTranscriptTracking:
             else:
                 cumulative_text = word
 
-            pos = tracker.update(cumulative_text)
-            current_position = pos.speakable_index
+            pos: ScriptPosition = tracker.update(cumulative_text)
+            current_position: int = pos.speakable_index
 
-            forward_jump = current_position - last_position
+            forward_jump: int = current_position - last_position
 
             # Count jumps larger than 2 (normal matching might skip 1-2 words)
             if forward_jump > 2:
@@ -221,34 +222,34 @@ class TestTranscriptTracking:
         assert largest_forward_jump <= 5, \
             f"Largest forward jump was {largest_forward_jump} words, expected <= 5"
         # Most updates should advance by 0-2 words
-        total_updates = len(all_words)
-        jump_ratio = large_jump_count / total_updates
+        total_updates: int = len(all_words)
+        jump_ratio: float = large_jump_count / total_updates
         assert jump_ratio < 0.1, f"Large jump ratio was {jump_ratio:.2%}, expected < 10%"
 
-    def test_mixed_word_and_chunk_updates(self, number_test_script, number_test_transcript):
+    def test_mixed_word_and_chunk_updates(self, number_test_script: str, number_test_transcript: List[str]) -> None:
         """Verify tracking works with mixed update patterns (some words, some chunks).
 
         This test adds 1-4 words at a time. For small chunks, jumps should be small.
         Larger jumps indicate validation corrections which should be rare.
         """
-        tracker = ScriptTracker(number_test_script)
+        tracker: ScriptTracker = ScriptTracker(number_test_script)
 
-        last_position = 0
-        large_jumps = []
+        last_position: int = 0
+        large_jumps: List[Tuple[int, int]] = []
 
         # Combine lines into one big list of words
-        all_words = []
+        all_words: List[str] = []
         for line in number_test_transcript:
             all_words.extend(line.split())
 
-        cumulative_text = ""
-        word_idx = 0
+        cumulative_text: str = ""
+        word_idx: int = 0
 
         while word_idx < len(all_words):
             # Pick between 1 and 4 words to add using deterministic pattern
-            pattern = [1, 3, 2, 4]
-            chunk_size = pattern[word_idx % len(pattern)]
-            actual_chunk = 0
+            pattern: List[int] = [1, 3, 2, 4]
+            chunk_size: int = pattern[word_idx % len(pattern)]
+            actual_chunk: int = 0
 
             # Add chunk_size words
             for _ in range(chunk_size):
@@ -261,10 +262,10 @@ class TestTranscriptTracking:
                 word_idx += 1
                 actual_chunk += 1
 
-            pos = tracker.update(cumulative_text)
-            current_position = pos.speakable_index
+            pos: ScriptPosition = tracker.update(cumulative_text)
+            current_position: int = pos.speakable_index
 
-            jump = abs(current_position - last_position)
+            jump: int = abs(current_position - last_position)
 
             # For 1-4 word chunks, max reasonable jump is ~8 (2x chunk + margin)
             # Larger jumps indicate validation corrections
@@ -279,63 +280,64 @@ class TestTranscriptTracking:
             f"Too many large jumps (>8): {len(large_jumps)} - {large_jumps[:5]}"
 
         # Should reach near the end
-        final_progress = tracker.progress
+        final_progress: float = tracker.progress
         assert final_progress > 0.8, f"Final progress was {final_progress:.2%}, expected > 80%"
 
     def test_position_never_exceeds_script_length(
-        self, number_test_script, number_test_transcript
-    ):
+        self, number_test_script: str, number_test_transcript: List[str]
+    ) -> None:
         """Verify position never goes beyond the script length."""
-        tracker = ScriptTracker(number_test_script)
-        script_length = len(tracker.words)
+        tracker: ScriptTracker = ScriptTracker(number_test_script)
+        script_length: int = len(tracker.words)
 
-        all_words = []
+        all_words: List[str] = []
         for line in number_test_transcript:
             all_words.extend(line.split())
 
-        cumulative_text = ""
+        cumulative_text: str = ""
         for word in all_words:
             if cumulative_text:
                 cumulative_text += " " + word
             else:
                 cumulative_text = word
 
-            pos = tracker.update(cumulative_text)
+            pos: ScriptPosition = tracker.update(cumulative_text)
 
             assert pos.speakable_index <= script_length, \
                 f"Position {pos.speakable_index} exceeded script length {script_length}"
 
     def test_consistent_position_on_repeated_updates(
-        self, number_test_script, number_test_transcript
-    ):
+        self, number_test_script: str, number_test_transcript: List[str]
+    ) -> None:
         """Verify that updating with the same text doesn't change position."""
-        tracker = ScriptTracker(number_test_script)
+        tracker: ScriptTracker = ScriptTracker(number_test_script)
 
         # Build up some context first
-        first_few_lines = " ".join(number_test_transcript[:5])
+        first_few_lines: str = " ".join(number_test_transcript[:5])
 
-        pos1 = tracker.update(first_few_lines)
-        pos2 = tracker.update(first_few_lines)  # Same text
-        pos3 = tracker.update(first_few_lines)  # Same text again
+        pos1: ScriptPosition = tracker.update(first_few_lines)
+        pos2: ScriptPosition = tracker.update(first_few_lines)  # Same text
+        pos3: ScriptPosition = tracker.update(
+            first_few_lines)  # Same text again
 
         # Position should not change when text doesn't change
         assert pos1.speakable_index == pos2.speakable_index == pos3.speakable_index, \
             (f"Position changed on repeated updates: "
              f"{pos1.speakable_index}, {pos2.speakable_index}, {pos3.speakable_index}")
 
-    def test_steady_progress_through_script(self, number_test_script, number_test_transcript):
+    def test_steady_progress_through_script(self, number_test_script: str, number_test_transcript: List[str]) -> None:
         """Verify steady forward progress through the script."""
-        tracker = ScriptTracker(number_test_script)
+        tracker: ScriptTracker = ScriptTracker(number_test_script)
 
-        all_words = []
+        all_words: List[str] = []
         for line in number_test_transcript:
             all_words.extend(line.split())
 
-        cumulative_text = ""
-        progress_samples = []
+        cumulative_text: str = ""
+        progress_samples: List[float] = []
 
         # Sample progress at regular intervals
-        sample_interval = len(all_words) // 10  # 10 samples
+        sample_interval: int = len(all_words) // 10  # 10 samples
 
         for i, word in enumerate(all_words):
             if cumulative_text:
@@ -349,7 +351,7 @@ class TestTranscriptTracking:
                 progress_samples.append(tracker.progress)
 
         # Progress should generally increase (allow some small decreases)
-        decreases = 0
+        decreases: int = 0
         for i in range(1, len(progress_samples)):
             if progress_samples[i] < progress_samples[i-1]:
                 decreases += 1
@@ -359,6 +361,6 @@ class TestTranscriptTracking:
 
         # Progress samples should span a good range
         if len(progress_samples) >= 2:
-            progress_range = progress_samples[-1] - progress_samples[0]
+            progress_range: float = progress_samples[-1] - progress_samples[0]
             assert progress_range > 0.5, \
                 f"Progress range was only {progress_range:.2%}, expected > 50%"

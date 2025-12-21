@@ -15,13 +15,13 @@ Units are ONLY expanded when attached to numbers (not standalone).
 """
 
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional, Pattern
 
 from num2words import num2words
 
 
 # Regex patterns for detecting number types
-PATTERNS = {
+PATTERNS: Dict[str, Pattern[str]] = {
     # Pure integers: 100, 1000, 1000000
     'integer': re.compile(r'^-?\d+$'),
 
@@ -47,7 +47,7 @@ PATTERNS = {
 
 # Common fractions mapped to spoken alternatives
 # Only include very common fractions as specified
-COMMON_FRACTIONS: dict[str, List[List[str]]] = {
+COMMON_FRACTIONS: Dict[str, List[List[str]]] = {
     '0.5': [['half'], ['one', 'half'], ['a', 'half']],
     '0.50': [['half'], ['one', 'half'], ['a', 'half']],
     '0.25': [['quarter'], ['one', 'quarter'], ['a', 'quarter']],
@@ -62,7 +62,7 @@ COMMON_FRACTIONS: dict[str, List[List[str]]] = {
 
 
 # Unit abbreviations and their spoken forms (only used when attached to numbers)
-UNIT_EXPANSIONS: dict[str, List[List[str]]] = {
+UNIT_EXPANSIONS: Dict[str, List[List[str]]] = {
     # Data storage
     'k': [['k'], ['thousand']],
     'kb': [['k', 'b'], ['kilobytes'], ['kilobyte']],
@@ -133,7 +133,7 @@ UNIT_EXPANSIONS: dict[str, List[List[str]]] = {
 
 
 # Digit to word mapping
-DIGIT_WORDS = {
+DIGIT_WORDS: Dict[str, str] = {
     '0': 'zero', '1': 'one', '2': 'two', '3': 'three', '4': 'four',
     '5': 'five', '6': 'six', '7': 'seven', '8': 'eight', '9': 'nine'
 }
@@ -203,7 +203,16 @@ def _digits_as_words(digit_str: str, use_oh: bool = False) -> List[str]:
 
 
 def _num2words_to_list(num: int, ordinal: bool = False) -> List[str]:
-    """Convert number using num2words and return as word list."""
+    """Convert number using num2words and return as word list.
+
+    Args:
+        num: Integer to convert
+        ordinal: If True, convert to ordinal form (e.g., "first", "second")
+
+    Returns:
+        List of words representing the number
+    """
+    words: str
     if ordinal:
         words = num2words(num, to='ordinal')
     else:
@@ -228,11 +237,11 @@ def expand_integer(num: int) -> List[List[str]]:
         1100 -> [["one", "thousand", "one", "hundred"], ["eleven", "hundred"],
                  ["one", "one", "zero", "zero"]]
     """
-    alternatives = []
-    abs_num = abs(num)
+    alternatives: List[List[str]] = []
+    abs_num: int = abs(num)
 
     # Primary: num2words cardinal form
-    primary = _num2words_to_list(abs_num)
+    primary: List[str] = _num2words_to_list(abs_num)
     if num < 0:
         primary = ['minus'] + primary
     alternatives.append(primary)
@@ -241,7 +250,7 @@ def expand_integer(num: int) -> List[List[str]]:
     if num > 0:
         # Alternative with "a" instead of "one" for certain numbers
         if 100 <= abs_num < 200 and primary[0] == 'one':
-            alt = ['a'] + primary[1:]
+            alt: List[str] = ['a'] + primary[1:]
             if alt not in alternatives:
                 alternatives.append(alt)
         elif 1000 <= abs_num < 2000 and primary[0] == 'one':
@@ -251,8 +260,8 @@ def expand_integer(num: int) -> List[List[str]]:
 
         # "Eleven hundred" style for 1100-9900 (multiples of 100)
         if 1100 <= abs_num <= 9999 and abs_num % 100 == 0:
-            hundreds = abs_num // 100
-            hundreds_words = _num2words_to_list(hundreds)
+            hundreds: int = abs_num // 100
+            hundreds_words: List[str] = _num2words_to_list(hundreds)
             alt = hundreds_words + ['hundred']
             if alt not in alternatives:
                 alternatives.append(alt)
@@ -260,16 +269,16 @@ def expand_integer(num: int) -> List[List[str]]:
         # "Twelve hundred" style for non-multiples like 1200, 1500, etc.
         if 1100 <= abs_num <= 9999:
             hundreds = abs_num // 100
-            remainder = abs_num % 100
+            remainder: int = abs_num % 100
             if remainder > 0:
                 hundreds_words = _num2words_to_list(hundreds)
-                remainder_words = _num2words_to_list(remainder)
+                remainder_words: List[str] = _num2words_to_list(remainder)
                 alt = hundreds_words + ['hundred'] + remainder_words
                 if alt not in alternatives and hundreds >= 11:
                     alternatives.append(alt)
 
     # Digit-by-digit pronunciation for any number
-    digits = _digit_by_digit(abs_num)
+    digits: List[str] = _digit_by_digit(abs_num)
     if num < 0:
         digits = ['minus'] + digits
     if digits not in alternatives:
@@ -295,36 +304,37 @@ def expand_decimal(num_str: str) -> List[List[str]]:
         "0.5" -> [["zero", "point", "five"], ["point", "five"],
                   ["half"], ["one", "half"], ["a", "half"]]
     """
-    alternatives = []
+    alternatives: List[List[str]] = []
 
     # Handle negative
-    is_negative = num_str.startswith('-')
+    is_negative: bool = num_str.startswith('-')
     if is_negative:
         num_str = num_str[1:]
 
     # Split into integer and decimal parts
-    parts = num_str.split('.')
-    int_part = parts[0]
-    dec_part = parts[1]
+    parts: List[str] = num_str.split('.')
+    int_part: str = parts[0]
+    dec_part: str = parts[1]
 
     # Get integer part as words
-    int_num = int(int_part)
+    int_num: int = int(int_part)
+    int_words: List[str]
     if int_num == 0:
         int_words = ['zero']
     else:
         int_words = _num2words_to_list(int_num)
 
     # Standard "X point Y Z" form (digit by digit after point)
-    dec_words = _digits_as_words(dec_part)
-    standard = int_words + ['point'] + dec_words
+    dec_words: List[str] = _digits_as_words(dec_part)
+    standard: List[str] = int_words + ['point'] + dec_words
     if is_negative:
         standard = ['minus'] + standard
     alternatives.append(standard)
 
     # "oh" variant for zeros in decimal: "three point oh seven"
-    dec_words_oh = _digits_as_words(dec_part, use_oh=True)
+    dec_words_oh: List[str] = _digits_as_words(dec_part, use_oh=True)
     if dec_words_oh != dec_words:
-        oh_variant = int_words + ['point'] + dec_words_oh
+        oh_variant: List[str] = int_words + ['point'] + dec_words_oh
         if is_negative:
             oh_variant = ['minus'] + oh_variant
         if oh_variant not in alternatives:
@@ -333,12 +343,12 @@ def expand_decimal(num_str: str) -> List[List[str]]:
     # For leading zero decimals (0.xxx)
     if int_num == 0 and not is_negative:
         # Omit leading zero: "point three" instead of "zero point three"
-        no_zero = ['point'] + dec_words
+        no_zero: List[str] = ['point'] + dec_words
         if no_zero not in alternatives:
             alternatives.append(no_zero)
 
         # "oh point three" variant
-        oh_start = ['oh', 'point'] + dec_words
+        oh_start: List[str] = ['oh', 'point'] + dec_words
         if oh_start not in alternatives:
             alternatives.append(oh_start)
 
@@ -365,12 +375,12 @@ def expand_ordinal(token: str) -> List[List[str]]:
         "2nd" -> [["second"]]
         "23rd" -> [["twenty", "third"]]
     """
-    match = PATTERNS['ordinal'].match(token.strip())
+    match: Optional[re.Match[str]] = PATTERNS['ordinal'].match(token.strip())
     if not match:
         return []
 
-    num = int(match.group(1))
-    ordinal_words = _num2words_to_list(num, ordinal=True)
+    num: int = int(match.group(1))
+    ordinal_words: List[str] = _num2words_to_list(num, ordinal=True)
     return [ordinal_words]
 
 
@@ -383,7 +393,7 @@ def _expand_unit_suffix(suffix: str) -> List[List[str]]:
     Returns:
         List of alternatives, defaults to spelling out letters
     """
-    suffix_lower = suffix.lower()
+    suffix_lower: str = suffix.lower()
 
     if suffix_lower in UNIT_EXPANSIONS:
         return UNIT_EXPANSIONS[suffix_lower]
@@ -421,43 +431,46 @@ def expand_mixed_alphanumeric(token: str) -> List[List[str]]:
         "4K" -> [["four", "k"], ["four", "thousand"]]
         "100GB" -> [["one", "hundred", "g", "b"], ["one", "hundred", "gigabytes"]]
     """
-    stripped = token.strip()
-    alternatives = []
+    stripped: str = token.strip()
+    alternatives: List[List[str]] = []
 
     # Check prefix pattern: M3, V8
-    prefix_match = PATTERNS['prefix_mixed'].match(stripped)
+    prefix_match: Optional[re.Match[str]
+                           ] = PATTERNS['prefix_mixed'].match(stripped)
     if prefix_match:
-        letters = prefix_match.group(1).lower()
-        num_str = prefix_match.group(2)
+        letters: str = prefix_match.group(1).lower()
+        num_str: str = prefix_match.group(2)
 
         # Only spell out short prefixes (1-2 chars) like "M3", "V8"
         # Keep longer prefixes as words like "word1" -> ["word", "one"]
+        letter_words: List[str]
         if len(letters) <= 2:
             letter_words = list(letters)
         else:
             letter_words = [letters]
 
         # Expand the number part
-        num_expansions = _expand_number_part(num_str)
+        num_expansions: List[List[str]] = _expand_number_part(num_str)
 
         for num_exp in num_expansions:
-            alt = letter_words + num_exp
+            alt: List[str] = letter_words + num_exp
             if alt not in alternatives:
                 alternatives.append(alt)
 
         return alternatives
 
     # Check suffix pattern: 4K, 100GB, 4.05GHz
-    suffix_match = PATTERNS['suffix_mixed'].match(stripped)
+    suffix_match: Optional[re.Match[str]
+                           ] = PATTERNS['suffix_mixed'].match(stripped)
     if suffix_match:
         num_str = suffix_match.group(1)
-        suffix = suffix_match.group(2)
+        suffix: str = suffix_match.group(2)
 
         # Expand the number part
         num_expansions = _expand_number_part(num_str)
 
         # Expand the suffix (could be abbreviation)
-        suffix_expansions = _expand_unit_suffix(suffix)
+        suffix_expansions: List[List[str]] = _expand_unit_suffix(suffix)
 
         for num_exp in num_expansions:
             for suffix_exp in suffix_expansions:
@@ -483,28 +496,28 @@ def expand_rate_unit(token: str) -> List[List[str]]:
         "100GB/s" -> [["one", "hundred", "g", "b", "per", "s"],
                       ["one", "hundred", "gigabytes", "per", "second"]]
     """
-    stripped = token.strip()
-    alternatives = []
+    stripped: str = token.strip()
+    alternatives: List[List[str]] = []
 
-    rate_match = PATTERNS['rate_unit'].match(stripped)
+    rate_match: Optional[re.Match[str]] = PATTERNS['rate_unit'].match(stripped)
     if not rate_match:
         return []
 
-    num_str = rate_match.group(1)
-    first_unit = rate_match.group(2)
-    second_unit = rate_match.group(3)
+    num_str: str = rate_match.group(1)
+    first_unit: str = rate_match.group(2)
+    second_unit: str = rate_match.group(3)
 
     # Expand the number part
-    num_expansions = _expand_number_part(num_str)
+    num_expansions: List[List[str]] = _expand_number_part(num_str)
 
     # Expand both units
-    first_unit_expansions = _expand_unit_suffix(first_unit)
-    second_unit_expansions = _expand_unit_suffix(second_unit)
+    first_unit_expansions: List[List[str]] = _expand_unit_suffix(first_unit)
+    second_unit_expansions: List[List[str]] = _expand_unit_suffix(second_unit)
 
     for num_exp in num_expansions:
         for first_exp in first_unit_expansions:
             for second_exp in second_unit_expansions:
-                alt = num_exp + first_exp + ['per'] + second_exp
+                alt: List[str] = num_exp + first_exp + ['per'] + second_exp
                 if alt not in alternatives:
                     alternatives.append(alt)
 
@@ -566,13 +579,20 @@ def get_number_expansion_first_words(token: str) -> Optional[List[str]]:
     This is useful for matching - if a spoken word matches any of these,
     it could be the start of an expansion for this token.
 
-    Example: get_number_expansion_first_words("100") returns ["one", "a"]
+    Args:
+        token: A token that may contain a number
+
+    Returns:
+        List of unique first words from all expansions, or None if not a number
+
+    Example:
+        get_number_expansion_first_words("100") returns ["one", "a"]
     """
-    expansions = get_number_expansions(token)
+    expansions: Optional[List[List[str]]] = get_number_expansions(token)
     if expansions is None:
         return None
     # Get unique first words
-    first_words = []
+    first_words: List[str] = []
     for exp in expansions:
         if exp and exp[0] not in first_words:
             first_words.append(exp[0])

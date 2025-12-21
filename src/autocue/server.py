@@ -8,13 +8,13 @@ import logging
 import re
 from pathlib import Path
 from html.parser import HTMLParser
-from typing import Optional, Set, List, Tuple, Dict
+from typing import Optional, Set, List, Tuple, Dict, Iterator, Any
 
 from aiohttp import web
 import markdown
 import sounddevice as sd
 
-from .config import load_config, save_config, update_config_display
+from .config import DEFAULT_CONFIG, DisplaySettings, load_config, save_config, update_config_display
 from . import debug_log
 from .script_parser import ParsedScript, parse_script, RawToken
 
@@ -28,18 +28,19 @@ class WordIndexingHTMLParser(HTMLParser):
     highlights match what the tracker returns.
     """
 
-    def __init__(self, parsed_script: ParsedScript):
+    def __init__(self, parsed_script: ParsedScript) -> None:
         super().__init__()
-        self.parsed_script = parsed_script
+        self.parsed_script: ParsedScript = parsed_script
         # Build a map from raw token text (lowercased) at each position to its index
         # This handles the case where the same word appears multiple times
-        self.raw_token_iter = iter(parsed_script.raw_tokens)
+        self.raw_token_iter: Iterator[RawToken] = iter(
+            parsed_script.raw_tokens)
         self.current_raw_token: Optional[RawToken] = None
         self._advance_token()
-        self.output = []
-        self.tag_stack = []
+        self.output: List[str] = []
+        self.tag_stack: List[str] = []
 
-    def _advance_token(self):
+    def _advance_token(self) -> None:
         """Move to the next raw token."""
         try:
             self.current_raw_token = next(self.raw_token_iter)
@@ -53,24 +54,24 @@ class WordIndexingHTMLParser(HTMLParser):
         # Compare normalized versions
         return self.current_raw_token.text.lower() == text.lower()
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
         """Handle opening HTML tags."""
-        attrs_str = ''.join(f' {k}="{v}"' for k, v in attrs)
+        attrs_str: str = ''.join(f' {k}="{v}"' for k, v in attrs)
         self.output.append(f'<{tag}{attrs_str}>')
         self.tag_stack.append(tag)
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         """Handle closing HTML tags."""
         self.output.append(f'</{tag}>')
         if self.tag_stack and self.tag_stack[-1] == tag:
             self.tag_stack.pop()
 
-    def handle_startendtag(self, tag, attrs):
+    def handle_startendtag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
         """Handle self-closing HTML tags."""
-        attrs_str = ''.join(f' {k}="{v}"' for k, v in attrs)
+        attrs_str: str = ''.join(f' {k}="{v}"' for k, v in attrs)
         self.output.append(f'<{tag}{attrs_str}/>')
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         """Process text data, wrapping words with indexed spans."""
         if not data.strip():
             # Preserve whitespace-only text
@@ -105,11 +106,11 @@ class WordIndexingHTMLParser(HTMLParser):
 
         self.output.append(''.join(result))
 
-    def handle_entityref(self, name):
+    def handle_entityref(self, name: str) -> None:
         """Handle HTML entity references like &amp;."""
         self.output.append(f'&{name};')
 
-    def handle_charref(self, name):
+    def handle_charref(self, name: str) -> None:
         """Handle HTML character references like &#39;."""
         self.output.append(f'&#{name};')
 
@@ -155,35 +156,22 @@ class WebServer:
     Serves the autocue web interface and manages WebSocket connections.
     """
 
-    DEFAULT_SETTINGS = {
-        "fontSize": 48,
-        "fontFamily": "Georgia, serif",
-        "lineHeight": 1.6,
-        "pastLines": 1,
-        "futureLines": 8,
-        "theme": "dark",
-        "highlightColor": "#FFD700",
-        "textColor": "#FFFFFF",
-        "dimColor": "#666666",
-        "backgroundColor": "#1a1a1a"
-    }
-
     def __init__(
         self,
         host: str = "127.0.0.1",
         port: int = 8000,
-        initial_settings: Optional[dict] = None,
+        initial_settings: Optional[DisplaySettings] = None,
         samples_dir: Optional[str] = None
-    ):
-        self.host = host
-        self.port = port
-        self.app = web.Application()
+    ) -> None:
+        self.host: str = host
+        self.port: int = port
+        self.app: web.Application = web.Application()
         self.websockets: Set[web.WebSocketResponse] = set()
         self.runner: Optional[web.AppRunner] = None
 
         # Sample scripts directory
         if samples_dir:
-            self.samples_dir = Path(samples_dir)
+            self.samples_dir: Path = Path(samples_dir)
         else:
             # Default to samples/ in the project root
             self.samples_dir = Path(__file__).parent.parent.parent / "samples"
@@ -200,7 +188,7 @@ class WebServer:
         self.start_transcript_on_script: bool = False
 
         # Merge initial settings with defaults
-        self.settings = self.DEFAULT_SETTINGS.copy()
+        self.settings = DEFAULT_CONFIG["display"].copy()
         if initial_settings:
             self.settings.update(initial_settings)
 
@@ -208,7 +196,7 @@ class WebServer:
 
     def _get_sample_scripts(self) -> List[Dict[str, str]]:
         """Get list of available sample scripts."""
-        samples = []
+        samples: List[Dict[str, str]] = []
         if self.samples_dir.exists():
             for f in sorted(self.samples_dir.glob("*.md")):
                 samples.append({
@@ -222,13 +210,13 @@ class WebServer:
         if not filename:
             return None
         # Sanitize filename to prevent path traversal
-        safe_name = Path(filename).name
-        script_path = self.samples_dir / safe_name
+        safe_name: str = Path(filename).name
+        script_path: Path = self.samples_dir / safe_name
         if script_path.exists() and script_path.suffix == ".md":
             return script_path.read_text(encoding="utf-8")
         return None
 
-    def _setup_routes(self):
+    def _setup_routes(self) -> None:
         """Set up HTTP routes."""
         self.app.router.add_get('/', self._handle_index)
         self.app.router.add_get('/ws', self._handle_websocket)
@@ -277,14 +265,14 @@ class WebServer:
 
         return ws
 
-    async def _handle_ws_message(self, ws: web.WebSocketResponse, data: dict):
+    async def _handle_ws_message(self, ws: web.WebSocketResponse, data: Dict[str, object]) -> None:
         """Handle incoming WebSocket messages using dispatch pattern."""
-        msg_type = data.get("type")
+        msg_type: Optional[object] = data.get("type")
         if not msg_type:
             return
 
         # Message type to handler dispatch
-        handlers = {
+        handlers: Dict[str, object] = {
             "script": self._on_script_message,
             "settings": self._on_settings_message,
             "reset": self._on_reset_message,
@@ -296,41 +284,46 @@ class WebServer:
             "set_audio_device": self._on_set_audio_device_message,
         }
 
-        handler = handlers.get(msg_type)
+        handler: Optional[object] = handlers.get(
+            msg_type)  # type: ignore[arg-type]
         if handler:
-            await handler(ws, data)
+            await handler(ws, data)  # type: ignore[operator]
         else:
             logger.warning("Unhandled WebSocket message: %s", msg_type)
 
-    async def _on_script_message(self, _ws: web.WebSocketResponse, data: dict):
+    async def _on_script_message(self, _ws: web.WebSocketResponse, data: Dict[str, object]) -> None:
         """Handle script update message."""
-        self.script_text = data.get("text", "")
-        self.start_transcript_on_script = data.get("saveTranscript", False)
+        self.script_text = str(data.get("text", ""))
+        self.start_transcript_on_script = bool(
+            data.get("saveTranscript", False))
         await self._render_and_broadcast_script()
 
-    async def _on_settings_message(self, _ws: web.WebSocketResponse, data: dict):
+    async def _on_settings_message(self, _ws: web.WebSocketResponse, data: Dict[str, object]) -> None:
         """Handle settings update message."""
-        self.settings.update(data.get("settings", {}))
+        settings_update = data.get("settings", {})
+        self.settings.update(settings_update)  # type: ignore
         await self.broadcast({
             "type": "settings_updated",
             "settings": self.settings
         })
 
-    async def _on_reset_message(self, _ws: web.WebSocketResponse, _data: dict):
+    async def _on_reset_message(self, _ws: web.WebSocketResponse, _data: Dict[str, object]) -> None:
         """Handle reset message."""
         await self.broadcast({"type": "reset"})
         self.reset_requested = True
 
-    async def _on_jump_to_message(self, _ws: web.WebSocketResponse, data: dict):
+    async def _on_jump_to_message(self, _ws: web.WebSocketResponse, data: Dict[str, object]) -> None:
         """Handle jump to position message."""
-        word_index = data.get("wordIndex", 0)
+        word_index_raw: object = data.get("wordIndex", 0)
+        word_index: int = int(word_index_raw) if isinstance(
+            word_index_raw, (int, float, str)) else 0
         await self.broadcast({
             "type": "jump_to",
             "wordIndex": word_index
         })
         self.jump_requested = word_index
 
-    async def _on_save_config_message(self, ws: web.WebSocketResponse, _data: dict):
+    async def _on_save_config_message(self, ws: web.WebSocketResponse, _data: Dict[str, object]) -> None:
         """Handle save config message."""
         try:
             config = load_config()
@@ -347,36 +340,40 @@ class WebServer:
                 "error": str(e)
             })
 
-    async def _on_frontend_highlight_message(self, _ws: web.WebSocketResponse, data: dict):
+    async def _on_frontend_highlight_message(self, _ws: web.WebSocketResponse, data: Dict[str, Any]) -> None:
         """Handle frontend highlight debug message."""
-        word_index = data.get("wordIndex", -1)
-        word = data.get("word", "")
-        source_line = data.get("sourceLine", -1)
-        source_offset = data.get("sourceOffset", -1)
-        server_word_index = data.get("serverWordIndex", -1)
+        word_index: int = int(data.get(
+            "wordIndex", -1)) if isinstance(data.get("wordIndex", -1), (int, float)) else -1
+        word: str = str(data.get("word", ""))
+        source_line: int = int(data.get(
+            "sourceLine", -1)) if isinstance(data.get("sourceLine", -1), (int, float)) else -1
+        source_offset: int = int(data.get(
+            "sourceOffset", -1)) if isinstance(data.get("sourceOffset", -1), (int, float)) else -1
+        server_word_index: int = int(data.get("serverWordIndex", -1)) if isinstance(
+            data.get("serverWordIndex", -1), (int, float)) else -1
         debug_log.log_frontend_word(
             word_index, word, source_line, source_offset)
         debug_log.log_frontend_server_data(
             server_word_index, source_line, source_offset)
 
-    async def _on_load_sample_message(self, _ws: web.WebSocketResponse, data: dict):
+    async def _on_load_sample_message(self, _ws: web.WebSocketResponse, data: Dict[str, object]) -> None:
         """Handle load sample script message."""
-        filename = data.get("filename", "")
-        content = self._load_sample_script(filename)
+        filename: str = str(data.get("filename", ""))
+        content: Optional[str] = self._load_sample_script(filename)
         if content is not None:
             self.script_text = content
             await self._render_and_broadcast_script()
 
-    async def _on_toggle_transcript_message(self, _ws: web.WebSocketResponse, data: dict):
+    async def _on_toggle_transcript_message(self, _ws: web.WebSocketResponse, data: Dict[str, object]) -> None:
         """Handle toggle transcript message."""
-        self.transcript_toggle_requested = data.get("enable", False)
+        self.transcript_toggle_requested = bool(data.get("enable", False))
 
-    async def _on_set_audio_device_message(self, ws: web.WebSocketResponse, data: dict):
+    async def _on_set_audio_device_message(self, ws: web.WebSocketResponse, data: Dict[str, object]) -> None:
         """Handle set audio device message."""
-        device_index = data.get("deviceIndex")
+        device_index: Optional[object] = data.get("deviceIndex")
         try:
             config = load_config()
-            config["audio_device"] = device_index
+            config["audio_device"] = device_index  # type: ignore
             if save_config(config):
                 await ws.send_json({
                     "type": "audio_device_updated",
@@ -401,7 +398,7 @@ class WebServer:
                 "error": str(e)
             })
 
-    async def _render_and_broadcast_script(self):
+    async def _render_and_broadcast_script(self) -> None:
         """Render script to HTML and broadcast to all clients."""
         self.script_html, self.total_words, _ = render_script_with_word_indices(
             self.script_text
@@ -415,8 +412,8 @@ class WebServer:
 
     async def _handle_script_upload(self, request: web.Request) -> web.Response:
         """Handle script upload via POST."""
-        data = await request.json()
-        self.script_text = data.get("text", "")
+        data: Dict[str, object] = await request.json()
+        self.script_text = str(data.get("text", ""))
         # Render with word indices embedded in the HTML
         self.script_html, self.total_words, _ = render_script_with_word_indices(
             self.script_text
@@ -464,11 +461,11 @@ class WebServer:
     async def _handle_get_audio_devices(self, request: web.Request) -> web.Response:
         """Get list of available audio input devices."""
         try:
-            devices = sd.query_devices()
-            device_list = []
-            for i, device in enumerate(devices):
-                dev: dict = dict(device)  # type: ignore[arg-type]
-                if dev['max_input_channels'] > 0:
+            devices: object = sd.query_devices()
+            device_list: List[Dict[str, object]] = []
+            for i, device in enumerate(devices):  # type: ignore[arg-type]
+                dev: Dict[str, object] = dict(device)  # type: ignore[arg-type]
+                if int(dev['max_input_channels']) > 0:  # type: ignore[arg-type]
                     device_list.append({
                         "index": i,
                         "name": dev['name'],
@@ -484,12 +481,12 @@ class WebServer:
                 status=500
             )
 
-    async def broadcast(self, message: dict):
+    async def broadcast(self, message: Dict[str, object]) -> None:
         """Send a message to all connected WebSocket clients."""
         if not self.websockets:
             return
 
-        dead = set()
+        dead: Set[web.WebSocketResponse] = set()
         for ws in self.websockets:
             try:
                 await ws.send_json(message)
@@ -499,7 +496,7 @@ class WebServer:
 
         self.websockets -= dead
 
-    async def send_transcript_status(self, recording: bool, file: Optional[str] = None):
+    async def send_transcript_status(self, recording: bool, file: Optional[str] = None) -> None:
         """Send transcript recording status to all clients."""
         await self.broadcast({
             "type": "transcript_status",
@@ -515,7 +512,7 @@ class WebServer:
         confidence: float,
         is_backtrack: bool,
         transcript: str = ""
-    ):
+    ) -> None:
         """Send position update to all clients."""
         if is_backtrack:
             logger.warning(
@@ -533,15 +530,15 @@ class WebServer:
             "transcript": transcript
         })
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the web server."""
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()
-        site = web.TCPSite(self.runner, self.host, self.port)
+        site: web.TCPSite = web.TCPSite(self.runner, self.host, self.port)
         await site.start()
         print(f"Web server running at http://{self.host}:{self.port}")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop the web server."""
         # Close all WebSocket connections
         for ws in list(self.websockets):
@@ -556,6 +553,6 @@ class WebServer:
 
     def _get_html(self) -> str:
         """Load and return the HTML for the autocue interface from static/index.html."""
-        static_dir = Path(__file__).parent / "static"
-        html_path = static_dir / "index.html"
+        static_dir: Path = Path(__file__).parent / "static"
+        html_path: Path = static_dir / "index.html"
         return html_path.read_text(encoding="utf-8")

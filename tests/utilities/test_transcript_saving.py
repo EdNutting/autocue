@@ -3,6 +3,7 @@
 import asyncio
 import tempfile
 from pathlib import Path
+from typing import Generator
 from unittest import mock
 
 import pytest
@@ -13,28 +14,28 @@ from autocue.main import AutocueApp, TRANSCRIPT_DIR
 class TestTranscriptSaving:
     """Test the transcript saving functionality."""
 
-    def test_transcript_disabled_by_default(self):
+    def test_transcript_disabled_by_default(self) -> None:
         """Transcript saving should be disabled by default."""
-        app = AutocueApp()
+        app: AutocueApp = AutocueApp()
         assert not app.save_transcript
         assert app.transcript_file is None
 
-    def test_transcript_enabled_via_parameter(self):
+    def test_transcript_enabled_via_parameter(self) -> None:
         """Transcript saving can be enabled via constructor parameter."""
-        app = AutocueApp(save_transcript=True)
+        app: AutocueApp = AutocueApp(save_transcript=True)
         assert app.save_transcript
         # File not created until _start_transcript is called
         assert app.transcript_file is None
 
-    def test_write_transcript_no_op_when_disabled(self):
+    def test_write_transcript_no_op_when_disabled(self) -> None:
         """_write_transcript() should do nothing when saving is disabled."""
-        app = AutocueApp(save_transcript=False)
+        app: AutocueApp = AutocueApp(save_transcript=False)
         # Should not raise even without transcript file
         app._write_transcript("test text", is_partial=False)
 
-    def test_write_transcript_no_op_without_file(self):
+    def test_write_transcript_no_op_without_file(self) -> None:
         """_write_transcript() should do nothing without transcript file."""
-        app = AutocueApp(save_transcript=True)
+        app: AutocueApp = AutocueApp(save_transcript=True)
         # File not initialized
         app._write_transcript("test text", is_partial=False)
         # Should not raise
@@ -44,20 +45,21 @@ class TestDynamicTranscriptControl:
     """Test the dynamic start/stop transcript functionality."""
 
     @pytest.fixture
-    def mock_server(self):
+    def mock_server(self) -> Generator[mock.AsyncMock, None, None]:
         """Create a mock server for testing."""
-        server = mock.AsyncMock()
+        server: mock.AsyncMock = mock.AsyncMock()
         server.send_transcript_status = mock.AsyncMock()
-        return server
+        yield server
 
     @pytest.mark.asyncio
-    async def test_start_transcript_creates_file(self, mock_server):
+    async def test_start_transcript_creates_file(self, mock_server: mock.AsyncMock) -> None:
         """_start_transcript() should create a new transcript file."""
-        app = AutocueApp(save_transcript=False)
+        app: AutocueApp = AutocueApp(save_transcript=False)
         app.server = mock_server
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with mock.patch('autocue.main.TRANSCRIPT_DIR', Path(tmpdir)):
+            tmpdir_path: Path = Path(tmpdir)
+            with mock.patch('autocue.main.TRANSCRIPT_DIR', tmpdir_path):
                 await app._start_transcript()
 
                 assert app.save_transcript is True
@@ -68,16 +70,17 @@ class TestDynamicTranscriptControl:
                 assert call_args[0][0] is True  # recording=True
 
     @pytest.mark.asyncio
-    async def test_start_transcript_no_op_if_already_recording(self, mock_server):
+    async def test_start_transcript_no_op_if_already_recording(self, mock_server: mock.AsyncMock) -> None:
         """_start_transcript() should be a no-op if already recording."""
-        app = AutocueApp(save_transcript=True)
+        app: AutocueApp = AutocueApp(save_transcript=True)
         app.server = mock_server
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with mock.patch('autocue.main.TRANSCRIPT_DIR', Path(tmpdir)):
+            tmpdir_path: Path = Path(tmpdir)
+            with mock.patch('autocue.main.TRANSCRIPT_DIR', tmpdir_path):
                 # Start first time
                 await app._start_transcript()
-                first_file = app.transcript_file
+                first_file: Path | None = app.transcript_file
 
                 # Reset mock
                 mock_server.send_transcript_status.reset_mock()
@@ -89,16 +92,17 @@ class TestDynamicTranscriptControl:
                 mock_server.send_transcript_status.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_stop_transcript_closes_file(self, mock_server):
+    async def test_stop_transcript_closes_file(self, mock_server: mock.AsyncMock) -> None:
         """_stop_transcript() should close the transcript and clear state."""
-        app = AutocueApp(save_transcript=False)
+        app: AutocueApp = AutocueApp(save_transcript=False)
         app.server = mock_server
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with mock.patch('autocue.main.TRANSCRIPT_DIR', Path(tmpdir)):
+            tmpdir_path: Path = Path(tmpdir)
+            with mock.patch('autocue.main.TRANSCRIPT_DIR', tmpdir_path):
                 # Start recording
                 await app._start_transcript()
-                transcript_file = app.transcript_file
+                transcript_file: Path | None = app.transcript_file
 
                 # Stop recording
                 await app._stop_transcript()
@@ -108,7 +112,7 @@ class TestDynamicTranscriptControl:
 
                 # File should have end marker
                 assert transcript_file is not None, "File should have been created"
-                content = transcript_file.read_text()
+                content: str = transcript_file.read_text()
                 assert "Transcript ended" in content
 
                 # Should send status update
@@ -116,9 +120,9 @@ class TestDynamicTranscriptControl:
                 assert call_args[0][0] is False  # recording=False
 
     @pytest.mark.asyncio
-    async def test_stop_transcript_no_op_if_not_recording(self, mock_server):
+    async def test_stop_transcript_no_op_if_not_recording(self, mock_server: mock.AsyncMock) -> None:
         """_stop_transcript() should be a no-op if not recording."""
-        app = AutocueApp(save_transcript=False)
+        app: AutocueApp = AutocueApp(save_transcript=False)
         app.server = mock_server
 
         await app._stop_transcript()
@@ -128,16 +132,17 @@ class TestDynamicTranscriptControl:
         mock_server.send_transcript_status.assert_called_once_with(False)
 
     @pytest.mark.asyncio
-    async def test_start_stop_cycle(self, mock_server):
+    async def test_start_stop_cycle(self, mock_server: mock.AsyncMock) -> None:
         """Test starting and stopping transcript multiple times."""
-        app = AutocueApp(save_transcript=False)
+        app: AutocueApp = AutocueApp(save_transcript=False)
         app.server = mock_server
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with mock.patch('autocue.main.TRANSCRIPT_DIR', Path(tmpdir)):
+            tmpdir_path: Path = Path(tmpdir)
+            with mock.patch('autocue.main.TRANSCRIPT_DIR', tmpdir_path):
                 # First cycle
                 await app._start_transcript()
-                first_file = app.transcript_file
+                first_file: Path | None = app.transcript_file
                 app._write_transcript("first recording", is_partial=False)
                 await app._stop_transcript()
 
@@ -146,7 +151,7 @@ class TestDynamicTranscriptControl:
 
                 # Second cycle
                 await app._start_transcript()
-                second_file = app.transcript_file
+                second_file: Path | None = app.transcript_file
                 app._write_transcript("second recording", is_partial=False)
                 await app._stop_transcript()
 
@@ -158,5 +163,7 @@ class TestDynamicTranscriptControl:
                 assert second_file.exists()
 
                 # Content should be correct
-                assert "first recording" in first_file.read_text()
-                assert "second recording" in second_file.read_text()
+                first_content: str = first_file.read_text()
+                second_content: str = second_file.read_text()
+                assert "first recording" in first_content
+                assert "second recording" in second_content

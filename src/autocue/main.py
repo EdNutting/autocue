@@ -14,6 +14,10 @@ from typing import Optional
 from . import debug_log
 from .audio import AudioCapture, list_devices
 from .config import (
+    DEFAULT_CONFIG,
+    Config,
+    DisplaySettings,
+    TrackingSettings,
     get_config_path,
     get_display_settings,
     get_tracking_settings,
@@ -44,19 +48,25 @@ class AutocueApp:
         port: int = 8000,
         audio_device: Optional[int] = None,
         chunk_ms: int = 100,
-        display_settings: Optional[dict] = None,
-        tracking_settings: Optional[dict] = None,
+        display_settings: Optional[DisplaySettings] = None,
+        tracking_settings: Optional[TrackingSettings] = None,
         save_transcript: bool = False
-    ):
-        self.model_path = model_path
-        self.model_name = model_name
-        self.host = host
-        self.port = port
-        self.audio_device = audio_device
-        self.chunk_ms = chunk_ms
-        self.display_settings = display_settings or {}
-        self.tracking_settings = tracking_settings or {}
-        self.save_transcript = save_transcript
+    ) -> None:
+        self.model_path: Optional[str] = model_path
+        self.model_name: str = model_name
+        self.host: str = host
+        self.port: int = port
+        self.audio_device: Optional[int] = audio_device
+        self.chunk_ms: int = chunk_ms
+        # type: ignore[assignment]
+        self.display_settings: DisplaySettings = (
+            display_settings or DEFAULT_CONFIG["display"]
+        )
+        # type: ignore[assignment]
+        self.tracking_settings: TrackingSettings = (
+            tracking_settings or DEFAULT_CONFIG["tracking"]
+        )
+        self.save_transcript: bool = save_transcript
 
         self.audio: Optional[AudioCapture] = None
         self.transcriber: Optional[Transcriber] = None
@@ -64,23 +74,23 @@ class AutocueApp:
         self.server: Optional[WebServer] = None
         self.transcript_file: Optional[Path] = None
 
-        self.running = False
+        self.running: bool = False
 
         # Track last sent position to avoid duplicate updates
         self._last_sent_word_index: Optional[int] = None
         self._last_sent_line_index: Optional[int] = None
         self._last_sent_word_offset: Optional[int] = None
 
-    def _write_transcript(self, text: str, is_partial: bool):
+    def _write_transcript(self, text: str, is_partial: bool) -> None:
         """Write recognized text to the transcript file."""
         if not self.save_transcript or not self.transcript_file:
             return
         # Only write final (non-partial) results to avoid duplicates
         if not is_partial and text.strip():
-            with open(self.transcript_file, 'a') as f:
+            with open(self.transcript_file, 'a', encoding='utf-8') as f:
                 f.write(f"{text}\n")
 
-    async def _start_transcript(self):
+    async def _start_transcript(self) -> None:
         """Start transcript recording."""
         assert self.server is not None, "Server must be initialized"
         if self.save_transcript and self.transcript_file:
@@ -90,15 +100,15 @@ class AutocueApp:
 
         self.save_transcript = True
         TRANSCRIPT_DIR.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp: str = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.transcript_file = TRANSCRIPT_DIR / f"transcript_{timestamp}.txt"
-        with open(self.transcript_file, 'w') as f:
+        with open(self.transcript_file, 'w', encoding='utf-8') as f:
             f.write(
                 f"=== Transcript started at {datetime.now().isoformat()} ===\n\n")
         print(f"Transcript recording started: {self.transcript_file}")
         await self.server.send_transcript_status(True, str(self.transcript_file))
 
-    async def _stop_transcript(self):
+    async def _stop_transcript(self) -> None:
         """Stop transcript recording."""
         assert self.server is not None, "Server must be initialized"
         if not self.save_transcript:
@@ -107,7 +117,7 @@ class AutocueApp:
             return
 
         if self.transcript_file:
-            with open(self.transcript_file, 'a') as f:
+            with open(self.transcript_file, 'a', encoding='utf-8') as f:
                 f.write(
                     f"\n=== Transcript ended at {datetime.now().isoformat()} ===\n")
             print(f"Transcript recording stopped: {self.transcript_file}")
@@ -116,7 +126,7 @@ class AutocueApp:
         self.transcript_file = None
         await self.server.send_transcript_status(False)
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the autocue application."""
         print("Starting Autocue...")
 
@@ -152,12 +162,12 @@ class AutocueApp:
         # Main processing loop
         await self._process_loop()
 
-    async def _process_loop(self):
+    async def _process_loop(self) -> None:
         """Main loop that processes audio and updates position."""
         assert self.server is not None, "Server must be initialized"
         assert self.audio is not None, "Audio must be initialized"
         assert self.transcriber is not None, "Transcriber must be initialized"
-        current_script = ""
+        current_script: str = ""
 
         while self.running:
             # Check if script has changed
@@ -199,7 +209,7 @@ class AutocueApp:
 
             # Check for jump request
             if self.server.jump_requested is not None:
-                jump_to = self.server.jump_requested
+                jump_to: int = self.server.jump_requested
                 self.server.jump_requested = None
                 if self.tracker:
                     self.tracker.jump_to(jump_to)
@@ -211,7 +221,7 @@ class AutocueApp:
 
             # Check for transcript toggle request
             if self.server.transcript_toggle_requested is not None:
-                enable = self.server.transcript_toggle_requested
+                enable: bool = self.server.transcript_toggle_requested
                 self.server.transcript_toggle_requested = None
                 if enable:
                     await self._start_transcript()
@@ -219,10 +229,10 @@ class AutocueApp:
                     await self._stop_transcript()
 
             # Process audio
-            audio_chunk = self.audio.get_chunk(timeout=0.05)
+            audio_chunk: Optional[bytes] = self.audio.get_chunk(timeout=0.05)
             if audio_chunk and self.tracker:
                 # Run blocking Vosk transcription in thread pool to keep event loop responsive
-                loop = asyncio.get_event_loop()
+                loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
                     None, self.transcriber.process_audio, audio_chunk
                 )
@@ -243,7 +253,7 @@ class AutocueApp:
                     )
 
                     # Only send update if position has actually changed or it's a backtrack
-                    position_changed = (
+                    position_changed: bool = (
                         position.word_index != self._last_sent_word_index or
                         position.line_index != self._last_sent_line_index or
                         word_offset != self._last_sent_word_offset
@@ -251,7 +261,7 @@ class AutocueApp:
 
                     if position_changed or position.is_backtrack:
                         # Log what we're sending to the client
-                        word_at_pos = self.tracker.words[position.word_index] if position.word_index < len(
+                        word_at_pos: str = self.tracker.words[position.word_index] if position.word_index < len(
                             self.tracker.words) else "END"
                         debug_log.log_server_word(
                             position.word_index, word_at_pos,
@@ -276,7 +286,7 @@ class AutocueApp:
             # Small sleep to prevent CPU spinning
             await asyncio.sleep(0.01)
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop the autocue application."""
         print("\nStopping Autocue...")
         self.running = False
@@ -290,7 +300,7 @@ class AutocueApp:
         print("Autocue stopped.")
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     # Configure logging - minimal console output
     logging.basicConfig(
@@ -302,9 +312,9 @@ def main():
     logging.getLogger("autocue.tracker").setLevel(logging.WARNING)
 
     # Load config first to use as defaults
-    config = load_config()
+    config: Config = load_config()
 
-    parser = argparse.ArgumentParser(
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Autocue - Low-latency teleprompter with speech tracking"
     )
 
@@ -378,7 +388,7 @@ def main():
         help="Enable debug logging to ./logs/"
     )
 
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
 
     # Handle special commands
     if args.list_devices:
@@ -407,7 +417,7 @@ def main():
         print("Debug logging enabled (logs will be saved to ./logs/)")
 
     # Create and run the app
-    app = AutocueApp(
+    app: AutocueApp = AutocueApp(
         model_path=args.model_path,
         model_name=args.model,
         host=args.host,
@@ -420,12 +430,12 @@ def main():
     )
 
     # Handle shutdown gracefully
-    loop = asyncio.new_event_loop()
+    loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    shutdown_event = asyncio.Event()
+    shutdown_event: asyncio.Event = asyncio.Event()
 
-    def shutdown(sig, frame):
+    def shutdown(sig: int, frame: object) -> None:
         """Handle shutdown signals (SIGINT, SIGTERM) gracefully."""
         print("\nReceived shutdown signal...")
         # Set the running flag to false to stop the main loop
@@ -447,7 +457,7 @@ def main():
         except Exception:
             pass
         # Cancel any remaining tasks
-        pending = asyncio.all_tasks(loop)
+        pending: set[asyncio.Task[object]] = asyncio.all_tasks(loop)
         for task in pending:
             task.cancel()
         # Allow cancelled tasks to complete

@@ -6,7 +6,7 @@ Provides partial results as speech is happening, not just final results.
 import json
 import os
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Dict, Any
 from vosk import Model, KaldiRecognizer, SetLogLevel
 
 
@@ -17,13 +17,17 @@ SetLogLevel(-1)
 class TranscriptionResult:
     """Represents a transcription result from Vosk."""
 
-    def __init__(self, text: str, is_partial: bool, confidence: float = 1.0):
+    text: str
+    is_partial: bool
+    confidence: float
+
+    def __init__(self, text: str, is_partial: bool, confidence: float = 1.0) -> None:
         self.text = text
         self.is_partial = is_partial
         self.confidence = confidence
 
-    def __repr__(self):
-        status = "partial" if self.is_partial else "final"
+    def __repr__(self) -> str:
+        status: str = "partial" if self.is_partial else "final"
         return f"TranscriptionResult({status}: '{self.text}')"
 
 
@@ -38,18 +42,23 @@ class Transcriber:
     """
 
     # Model download URLs and names
-    MODELS = {
+    MODELS: Dict[str, str] = {
         "small": "vosk-model-small-en-us-0.15",  # ~40MB, fastest
         "medium": "vosk-model-en-us-0.22",        # ~1.8GB, better accuracy
         "large": "vosk-model-en-us-0.42-gigaspeech",  # ~2.3GB, best accuracy
     }
+
+    sample_rate: int
+    model_path: str
+    model: Model
+    recognizer: KaldiRecognizer
 
     def __init__(
         self,
         model_path: Optional[str] = None,
         model_name: str = "small",
         sample_rate: int = 16000
-    ):
+    ) -> None:
         """
         Initialize the transcriber.
 
@@ -76,8 +85,8 @@ class Transcriber:
     def _get_model_path(self, model_name: str) -> str:
         """Get the default model path for the given model name."""
         # Store models in user's cache directory
-        cache_dir = Path.home() / ".cache" / "autocue" / "models"
-        model_dir_name = self.MODELS.get(model_name, model_name)
+        cache_dir: Path = Path.home() / ".cache" / "autocue" / "models"
+        model_dir_name: str = self.MODELS.get(model_name, model_name)
         return str(cache_dir / model_dir_name)
 
     def process_audio(self, audio_data: bytes) -> Optional[TranscriptionResult]:
@@ -92,28 +101,29 @@ class Transcriber:
         """
         if self.recognizer.AcceptWaveform(audio_data):
             # Final result - speech segment complete
-            result = json.loads(self.recognizer.Result())
-            text = result.get("text", "").strip()
+            result: Dict[str, Any] = json.loads(self.recognizer.Result())
+            text: str = result.get("text", "").strip()
             if text:
                 return TranscriptionResult(text, is_partial=False)
         else:
             # Partial result - speech still in progress
-            result = json.loads(self.recognizer.PartialResult())
-            text = result.get("partial", "").strip()
+            result: Dict[str, Any] = json.loads(
+                self.recognizer.PartialResult())
+            text: str = result.get("partial", "").strip()
             if text:
                 return TranscriptionResult(text, is_partial=True)
 
         return None
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset the recognizer state (e.g., after a long pause)."""
         self.recognizer = KaldiRecognizer(self.model, self.sample_rate)
         self.recognizer.SetWords(True)
 
     def get_final(self) -> Optional[TranscriptionResult]:
         """Get any remaining buffered speech as final result."""
-        result = json.loads(self.recognizer.FinalResult())
-        text = result.get("text", "").strip()
+        result: Dict[str, Any] = json.loads(self.recognizer.FinalResult())
+        text: str = result.get("text", "").strip()
         if text:
             return TranscriptionResult(text, is_partial=False)
         return None
@@ -134,24 +144,24 @@ def download_model(model_name: str = "small", target_dir: Optional[str] = None) 
     import zipfile
     import tempfile
 
-    model_dir_name = Transcriber.MODELS.get(model_name)
+    model_dir_name: Optional[str] = Transcriber.MODELS.get(model_name)
     if not model_dir_name:
         raise ValueError(
             f"Unknown model: {model_name}. Choose from: {list(Transcriber.MODELS.keys())}")
 
     if target_dir is None:
-        target_path = Path.home() / ".cache" / "autocue" / "models"
+        target_path: Path = Path.home() / ".cache" / "autocue" / "models"
     else:
-        target_path = Path(target_dir)
+        target_path: Path = Path(target_dir)
 
     target_path.mkdir(parents=True, exist_ok=True)
-    model_path = target_path / model_dir_name
+    model_path: Path = target_path / model_dir_name
 
     if model_path.exists():
         print(f"Model already exists at {model_path}")
         return str(model_path)
 
-    url = f"https://alphacephei.com/vosk/models/{model_dir_name}.zip"
+    url: str = f"https://alphacephei.com/vosk/models/{model_dir_name}.zip"
     print(f"Downloading {model_name} model from {url}...")
     print("This may take a few minutes depending on your connection.")
 
