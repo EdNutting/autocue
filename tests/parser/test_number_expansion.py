@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import pytest
+import markdown
 from src.autocue.number_expander import (
     is_number_token,
     get_number_expansions,
@@ -21,6 +22,7 @@ from src.autocue.number_expander import (
     COMMON_FRACTIONS,
     UNIT_EXPANSIONS,
 )
+from src.autocue.script_parser import parse_script, get_all_expansions
 
 
 class TestIsNumberToken:
@@ -321,7 +323,6 @@ class TestExpandMixedAlphanumeric:
         expansions = expand_mixed_alphanumeric("iPhone12")
 
         # Long prefixes (>2 chars) are kept as words, not spelled out
-        # "iPhone12" -> ["iphone", "twelve"] (not ["i", "p", "h", "o", "n", "e", "twelve"])
         assert any(exp[0] == "iphone" for exp in expansions)
         assert any("twelve" in exp for exp in expansions)
 
@@ -472,9 +473,6 @@ class TestIntegrationWithParser:
 
     def test_number_in_script_creates_speakable_words(self):
         """Numbers in script should create ONE speakable word with all expansions."""
-        from src.autocue.script_parser import parse_script
-        import markdown
-
         script = "The answer is 100"
         html = markdown.markdown(script, extensions=['nl2br', 'sane_lists'])
         parsed = parse_script(script, html)
@@ -490,9 +488,6 @@ class TestIntegrationWithParser:
 
     def test_ordinal_in_script(self):
         """Ordinals in script should expand correctly."""
-        from src.autocue.script_parser import parse_script
-        import markdown
-
         script = "This is the 1st item"
         html = markdown.markdown(script, extensions=['nl2br', 'sane_lists'])
         parsed = parse_script(script, html)
@@ -503,9 +498,6 @@ class TestIntegrationWithParser:
 
     def test_decimal_in_script(self):
         """Decimals in script should create ONE speakable word with all expansions."""
-        from src.autocue.script_parser import parse_script
-        import markdown
-
         script = "The value is 3.14"
         html = markdown.markdown(script, extensions=['nl2br', 'sane_lists'])
         parsed = parse_script(script, html)
@@ -520,10 +512,7 @@ class TestIntegrationWithParser:
         assert ["three", "point", "one", "four"] in sw.all_expansions
 
     def test_mixed_alphanumeric_in_script(self):
-        """Mixed alphanumeric in script should create ONE speakable word with all expansions."""
-        from src.autocue.script_parser import parse_script
-        import markdown
-
+        """Mixed alphanumeric in script should create ONE speakable word."""
         script = "The display is 4K resolution"
         html = markdown.markdown(script, extensions=['nl2br', 'sane_lists'])
         parsed = parse_script(script, html)
@@ -539,18 +528,13 @@ class TestIntegrationWithParser:
 
     def test_get_all_expansions_returns_number_alternatives(self):
         """get_all_expansions should return number alternatives."""
-        from src.autocue.script_parser import get_all_expansions
-
         expansions = get_all_expansions("100")
         assert expansions is not None
         assert len(expansions) > 1  # Should have multiple alternatives
         assert ["one", "hundred"] in expansions
 
     def test_number_creates_expansion_speakable_words(self):
-        """Numbers should create ONE SpeakableWord with is_expansion=True and all_expansions set."""
-        from src.autocue.script_parser import parse_script
-        import markdown
-
+        """Numbers should create ONE SpeakableWord with is_expansion=True."""
         script = "Count to 100"
         html = markdown.markdown(script, extensions=['nl2br', 'sane_lists'])
         parsed = parse_script(script, html)
@@ -566,9 +550,6 @@ class TestIntegrationWithParser:
 
     def test_raw_to_speakable_mapping_correct(self):
         """Raw token should map to ONE speakable word with all expansions."""
-        from src.autocue.script_parser import parse_script
-        import markdown
-
         script = "100"
         html = markdown.markdown(script, extensions=['nl2br', 'sane_lists'])
         parsed = parse_script(script, html)
@@ -584,9 +565,6 @@ class TestIntegrationWithParser:
 
     def test_500ms_in_script(self):
         """500ms in script should create ONE speakable word with all expansions."""
-        from src.autocue.script_parser import parse_script
-        import markdown
-
         script = "The latency is 500ms"
         html = markdown.markdown(script, extensions=['nl2br', 'sane_lists'])
         parsed = parse_script(script, html)
@@ -595,7 +573,7 @@ class TestIntegrationWithParser:
         expansion_words = [sw for sw in parsed.speakable_words if sw.is_expansion]
         assert len(expansion_words) == 1  # ONE speakable word per expandable token
 
-        # The speakable word should have all_expansions containing "five hundred" + unit variations
+        # The speakable word should have all_expansions containing "five hundred" + unit
         sw = expansion_words[0]
         assert sw.all_expansions is not None
         # Should have "five hundred milliseconds" or similar
@@ -675,9 +653,6 @@ class TestRateUnits:
 
     def test_rate_unit_in_script(self):
         """Rate units in script should create expansion speakable words."""
-        from src.autocue.script_parser import parse_script
-        import markdown
-
         script = "Memory bandwidth might be 100GB/s"
         html = markdown.markdown(script, extensions=['nl2br', 'sane_lists'])
         parsed = parse_script(script, html)

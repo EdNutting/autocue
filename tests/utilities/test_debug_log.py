@@ -1,6 +1,5 @@
 """Tests for the debug_log module enable/disable functionality."""
 
-import os
 import tempfile
 from pathlib import Path
 from unittest import mock

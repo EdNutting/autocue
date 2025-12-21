@@ -104,20 +104,25 @@ class TestNormalTalking:
             pos = tracker.update(transcript)
 
             # Position should advance by 1 for each word
-            assert pos.word_index == i + 1, f"Expected word_index {i + 1} after '{word}', got {pos.word_index}"
+            assert pos.word_index == i + 1, \
+                f"Expected word_index {i + 1} after '{word}', got {pos.word_index}"
 
     def test_multi_paragraph_tracking(self):
         """Speaking through multiple paragraphs should maintain accurate position."""
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Start with the header, then continue into intro
-        # Words: welcome to autocue hello and welcome to this demonstration of the autocue system...
-        intro = "welcome to autocue hello and welcome to this demonstration of the autocue system today im going to walk you through how this teleprompter works and why it might be useful for your video production workflow"
+        intro = (
+            "welcome to autocue hello and welcome to this demonstration of the "
+            "autocue system today im going to walk you through how this teleprompter "
+            "works and why it might be useful for your video production workflow"
+        )
         pos = tracker.update(intro)
 
         # Should have advanced through all words
         intro_word_count = len(intro.split())
-        assert pos.word_index >= intro_word_count - 3, f"Should be near position {intro_word_count}, got {pos.word_index}"
+        assert pos.word_index >= intro_word_count - 3, \
+            f"Should be near position {intro_word_count}, got {pos.word_index}"
 
         # Continue with the next section header and content
         section_start = intro + " how it works the system listens to your voice through the microphone"
@@ -130,17 +135,27 @@ class TestNormalTalking:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Track through header + intro (starting from actual first words)
-        tracker.update("welcome to autocue hello and welcome to this demonstration of the autocue system")
+        tracker.update(
+            "welcome to autocue hello and welcome to this demonstration of the autocue system"
+        )
         first_section_pos = tracker.optimistic_position
         assert first_section_pos > 0
 
         # Continue through more of intro
-        tracker.update("welcome to autocue hello and welcome to this demonstration of the autocue system today im going to walk you through how this teleprompter works")
+        tracker.update(
+            "welcome to autocue hello and welcome to this demonstration of the autocue "
+            "system today im going to walk you through how this teleprompter works"
+        )
         second_pos = tracker.optimistic_position
         assert second_pos > first_section_pos
 
         # Continue into "How It Works" section
-        tracker.update("welcome to autocue hello and welcome to this demonstration of the autocue system today im going to walk you through how this teleprompter works and why it might be useful for your video production workflow how it works the system listens to your voice")
+        tracker.update(
+            "welcome to autocue hello and welcome to this demonstration of the autocue "
+            "system today im going to walk you through how this teleprompter works and "
+            "why it might be useful for your video production workflow how it works the "
+            "system listens to your voice"
+        )
         third_pos = tracker.optimistic_position
         assert third_pos > second_pos
 
@@ -149,12 +164,26 @@ class TestNormalTalking:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Start from header and work up to key features
-        intro = "welcome to autocue hello and welcome to this demonstration of the autocue system today im going to walk you through how this teleprompter works and why it might be useful for your video production workflow how it works the system listens to your voice through the microphone and uses speech recognition to figure out where you are in the script it then scrolls the display automatically to keep up with you what makes this different from a traditional teleprompter is that you dont need a separate operator the software handles everything for you key features let me tell you about some of the key features"
+        intro = (
+            "welcome to autocue hello and welcome to this demonstration of the autocue "
+            "system today im going to walk you through how this teleprompter works and "
+            "why it might be useful for your video production workflow how it works the "
+            "system listens to your voice through the microphone and uses speech "
+            "recognition to figure out where you are in the script it then scrolls the "
+            "display automatically to keep up with you what makes this different from a "
+            "traditional teleprompter is that you dont need a separate operator the "
+            "software handles everything for you key features let me tell you about some "
+            "of the key features"
+        )
         pos = tracker.update(intro)
         pos_before_features = tracker.optimistic_position
 
         # Speak through the feature bullets
-        features = intro + " automatic scrolling that follows your natural speaking pace backtrack detection so if you make a mistake and restart a sentence it rewinds with you"
+        features = (
+            intro + " automatic scrolling that follows your natural speaking pace "
+            "backtrack detection so if you make a mistake and restart a sentence it "
+            "rewinds with you"
+        )
         pos = tracker.update(features)
 
         assert tracker.optimistic_position > pos_before_features
@@ -302,8 +331,10 @@ class TestMinorSpeechFaults:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Build up to "going to" section - script says "going to walk you through"
-        speech = ("welcome to autocue hello and welcome to this demonstration "
-                  "of the autocue system today im gonna walk you through")
+        speech = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im gonna walk you through"
+        )
         pos = tracker.update(speech)
 
         # Should still track - "gonna" vs "going" may not match exactly
@@ -327,8 +358,10 @@ class TestBacktracking:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Speak partway through - use correct starting words
-        speech = ("welcome to autocue hello and welcome to this demonstration "
-                  "of the autocue system today im going to walk you through")
+        speech = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through"
+        )
         tracker.update(speech)
         high_water = tracker.high_water_mark
         assert high_water > 10, "Should have advanced significantly"
@@ -349,11 +382,13 @@ class TestBacktracking:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Advance through intro and into "How It Works"
-        speech = ("welcome to autocue hello and welcome to this demonstration "
-                  "of the autocue system today im going to walk you through "
-                  "how this teleprompter works and why it might be useful for "
-                  "your video production workflow how it works the system "
-                  "listens to your voice through the microphone")
+        speech = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through "
+            "how this teleprompter works and why it might be useful for "
+            "your video production workflow how it works the system "
+            "listens to your voice through the microphone"
+        )
         tracker.update(speech)
         original_pos = tracker.optimistic_position
         assert original_pos > 30, "Should be well into the script"
@@ -373,10 +408,12 @@ class TestBacktracking:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # First advance to "the system listens" section
-        preamble = ("welcome to autocue hello and welcome to this demonstration "
-                    "of the autocue system today im going to walk you through "
-                    "how this teleprompter works and why it might be useful for "
-                    "your video production workflow how it works")
+        preamble = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through "
+            "how this teleprompter works and why it might be useful for "
+            "your video production workflow how it works"
+        )
         tracker.update(preamble)
 
         # Speak partway through the sentence
@@ -397,9 +434,11 @@ class TestBacktracking:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Advance using correct words
-        speech = ("welcome to autocue hello and welcome to this demonstration "
-                  "of the autocue system today im going to walk you through "
-                  "how this teleprompter works")
+        speech = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through "
+            "how this teleprompter works"
+        )
         tracker.update(speech)
 
         # Backtrack
@@ -420,9 +459,11 @@ class TestBacktracking:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Advance past the first heading into the content
-        speech = ("welcome to autocue hello and welcome to this demonstration "
-                  "of the autocue system today im going to walk you through "
-                  "how this teleprompter works and why it might be useful")
+        speech = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through "
+            "how this teleprompter works and why it might be useful"
+        )
         tracker.update(speech)
 
         # Now restart at the "how it works" heading
@@ -438,9 +479,11 @@ class TestBacktracking:
         tracker = ScriptTracker(SAMPLE_SCRIPT, backtrack_threshold=3)
 
         # Advance to a reasonable position
-        speech = ("welcome to autocue hello and welcome to this demonstration "
-                  "of the autocue system today im going to walk you through "
-                  "how this teleprompter")
+        speech = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through "
+            "how this teleprompter"
+        )
         tracker.update(speech)
 
         # Going back just 2 words shouldn't trigger backtrack
@@ -484,18 +527,20 @@ class TestForwardJumping:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Navigate to the features section using correct starting words
-        intro = ("welcome to autocue hello and welcome to this demonstration "
-                 "of the autocue system today im going to walk you through "
-                 "how this teleprompter works and why it might be useful for "
-                 "your video production workflow how it works the system "
-                 "listens to your voice through the microphone and uses speech "
-                 "recognition to figure out where you are in the script it then "
-                 "scrolls the display automatically to keep up with you what "
-                 "makes this different from a traditional teleprompter is that "
-                 "you dont need a separate operator the software handles "
-                 "everything for you key features let me tell you about some "
-                 "of the key features automatic scrolling that follows your "
-                 "natural speaking pace")
+        intro = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through "
+            "how this teleprompter works and why it might be useful for "
+            "your video production workflow how it works the system "
+            "listens to your voice through the microphone and uses speech "
+            "recognition to figure out where you are in the script it then "
+            "scrolls the display automatically to keep up with you what "
+            "makes this different from a traditional teleprompter is that "
+            "you dont need a separate operator the software handles "
+            "everything for you key features let me tell you about some "
+            "of the key features automatic scrolling that follows your "
+            "natural speaking pace"
+        )
         tracker.update(intro)
         pos_after_first_bullet = tracker.optimistic_position
 
@@ -533,7 +578,7 @@ class TestFalsePositiveBacktrackPrevention:
     """
 
     def test_repeated_phrase_no_false_backtrack(self):
-        """Repeated phrases later in script shouldn't trigger false backtrack to earlier occurrence."""
+        """Repeated phrases later in script shouldn't trigger false backtrack."""
         # Script with repeated phrase "the system"
         script_with_repeats = """The system is great. It works well.
 
@@ -549,24 +594,29 @@ Later on, the system handles more tasks. The system never fails."""
         tracker.update("the system is great it works well later on the system handles")
 
         # Should have advanced, not gone back
-        assert tracker.optimistic_position >= pos_before, "Should not backtrack to earlier 'the system'"
+        assert tracker.optimistic_position >= pos_before, \
+            "Should not backtrack to earlier 'the system'"
 
     def test_common_words_no_false_backtrack(self):
         """Common words like 'the', 'and', 'to' shouldn't cause false backtracks."""
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Advance well into the script with correct starting words
-        speech1 = ("welcome to autocue hello and welcome to this demonstration "
-                   "of the autocue system today im going to walk you through "
-                   "how this teleprompter works and why it might be useful for "
-                   "your video production workflow how it works the system "
-                   "listens to your voice")
+        speech1 = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through "
+            "how this teleprompter works and why it might be useful for "
+            "your video production workflow how it works the system "
+            "listens to your voice"
+        )
         tracker.update(speech1)
         position_in_section_2 = tracker.optimistic_position
 
         # Continue speaking
-        speech2 = (speech1 + " through the microphone and uses speech "
-                   "recognition to figure out where you are in the script")
+        speech2 = (
+            speech1 + " through the microphone and uses speech "
+            "recognition to figure out where you are in the script"
+        )
         tracker.update(speech2)
 
         # Should continue forward, not jump back
@@ -577,8 +627,10 @@ Later on, the system handles more tasks. The system never fails."""
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Advance to a position
-        speech1 = ("welcome to autocue hello and welcome to this demonstration "
-                   "of the autocue system today")
+        speech1 = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today"
+        )
         tracker.update(speech1)
         pos1 = tracker.optimistic_position
 
@@ -611,9 +663,11 @@ Later on, the system handles more tasks. The system never fails."""
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Advance through content
-        speech = ("welcome to autocue hello and welcome to this demonstration "
-                  "of the autocue system today im going to walk you through "
-                  "how this teleprompter works and why it might be useful")
+        speech = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through "
+            "how this teleprompter works and why it might be useful"
+        )
         tracker.update(speech)
         current_pos = tracker.optimistic_position
 
@@ -648,33 +702,40 @@ Later section. The quick brown fox jumps one more time. End."""
         tracker = ScriptTracker(script, max_jump_distance=50)
 
         # Advance to the "Later section" part
-        tracker.update("start here the quick brown fox jumps middle section with content here the quick brown fox jumps again and more content follows later section")
+        tracker.update(
+            "start here the quick brown fox jumps middle section with content here "
+            "the quick brown fox jumps again and more content follows later section"
+        )
         pos_at_later = tracker.optimistic_position
 
-        # Now backtrack to "the quick brown fox" - should go to nearest one (the third occurrence)
+        # Now backtrack to "the quick brown fox" - should go to nearest one
         tracker.last_transcription = ""
         tracker.needs_validation = True
-        validated_pos, is_backtrack = tracker.validate_position("the quick brown fox jumps one more time")
+        validated_pos, is_backtrack = tracker.validate_position(
+            "the quick brown fox jumps one more time"
+        )
 
         # Should match the nearest occurrence, not jump all the way back
-        # The third "the quick brown fox" is closest to where we were
-        assert tracker.optimistic_position >= pos_at_later - 20, "Should backtrack to nearest occurrence"
+        assert tracker.optimistic_position >= pos_at_later - 20, \
+            "Should backtrack to nearest occurrence"
 
     def test_max_jump_distance_prevents_distant_match(self):
         """max_jump_distance should prevent matching very distant similar text."""
         tracker = ScriptTracker(SAMPLE_SCRIPT, max_jump_distance=20)
 
         # Advance far into the script with correct starting words
-        long_speech = ("welcome to autocue hello and welcome to this demonstration "
-                       "of the autocue system today im going to walk you through "
-                       "how this teleprompter works and why it might be useful for "
-                       "your video production workflow how it works the system "
-                       "listens to your voice through the microphone and uses speech "
-                       "recognition to figure out where you are in the script it then "
-                       "scrolls the display automatically to keep up with you what "
-                       "makes this different from a traditional teleprompter is that "
-                       "you dont need a separate operator the software handles "
-                       "everything for you")
+        long_speech = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through "
+            "how this teleprompter works and why it might be useful for "
+            "your video production workflow how it works the system "
+            "listens to your voice through the microphone and uses speech "
+            "recognition to figure out where you are in the script it then "
+            "scrolls the display automatically to keep up with you what "
+            "makes this different from a traditional teleprompter is that "
+            "you dont need a separate operator the software handles "
+            "everything for you"
+        )
         tracker.update(long_speech)
         pos_far_in = tracker.optimistic_position
 
@@ -700,7 +761,10 @@ Third: always speak clearly and naturally. The end."""
         tracker = ScriptTracker(script, max_jump_distance=50)
 
         # Advance to "Third" section
-        tracker.update("first speak clearly and naturally second remember to speak clearly and naturally third always")
+        tracker.update(
+            "first speak clearly and naturally second remember to speak clearly "
+            "and naturally third always"
+        )
         pos_at_third = tracker.optimistic_position
 
         # Backtrack to "speak clearly and naturally"
@@ -735,11 +799,11 @@ Finally, master the basics. You have completed training."""
         pos_after_first = tracker.optimistic_position
 
         # Continue with "now" - should NOT jump to "finally master the basics"
-        # even though "the basics" appears there too
         tracker.update("start with the basics learn the fundamentals first now practice")
 
         # Should move forward normally, not jump to the end
-        assert tracker.optimistic_position < pos_after_first + 15, "Should not jump far forward"
+        assert tracker.optimistic_position < pos_after_first + 15, \
+            "Should not jump far forward"
 
     def test_repeated_later_content_no_jump(self):
         """Content repeated later in script shouldn't cause premature forward jump."""
@@ -864,12 +928,10 @@ class TestEdgeCasesWithSampleScript:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Use the actual script words to advance to numbers section
-        # This is a simplified approach - just verify we can track numbers
         script_with_numbers = "the m3 processor has approximately"
         tracker.update(script_with_numbers)
 
         # The tracker should find some match (numbers section exists in script)
-        # We mainly verify no error occurs and some tracking happens
         assert tracker.optimistic_position >= 0
 
     def test_markdown_formatting_stripped(self):
@@ -877,7 +939,6 @@ class TestEdgeCasesWithSampleScript:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Verify markdown is stripped - "bold" and "text" should be words
-        # Look for these words in the script
         assert "bold" in tracker.words
         assert "text" in tracker.words
 
@@ -904,8 +965,10 @@ class TestProgressTracking:
         progress1 = tracker.progress
         assert progress1 > 0
 
-        speech2 = ("welcome to autocue hello and welcome to this demonstration "
-                   "of the autocue system today im going to walk you through")
+        speech2 = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through"
+        )
         tracker.update(speech2)
         progress2 = tracker.progress
         assert progress2 > progress1
@@ -929,14 +992,15 @@ class TestIntegrationScenarios:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Speak through intro with correct words
-        speech = ("welcome to autocue hello and welcome to this demonstration "
-                  "of the autocue system today im going to walk you through "
-                  "how this teleprompter works")
+        speech = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through "
+            "how this teleprompter works"
+        )
         tracker.update(speech)
         pos_after_intro = tracker.optimistic_position
 
-        # Simulate backtrack - in real usage, transcript naturally resets when
-        # speech recognition detects a new utterance
+        # Simulate backtrack
         tracker.needs_validation = True
         tracker.validate_position("today im going to walk you through")
         backtrack_pos = tracker.optimistic_position
@@ -948,7 +1012,6 @@ class TestIntegrationScenarios:
         assert tracker.skip_disabled_count == 5
 
         # Continue speaking - simulate incremental speech recognition updates
-        # Each update extends the transcript and matches sequentially
         tracker.update("today im going to walk you through how")
         tracker.update("today im going to walk you through how this")
         tracker.update("today im going to walk you through how this teleprompter")
@@ -988,16 +1051,20 @@ class TestIntegrationScenarios:
         tracker = ScriptTracker(SAMPLE_SCRIPT)
 
         # Read How It Works section content
-        how_it_works = ("the system listens to your voice through the microphone "
-                        "and uses speech recognition to figure out where you are "
-                        "in the script it then scrolls the display automatically "
-                        "to keep up with you")
+        how_it_works = (
+            "the system listens to your voice through the microphone "
+            "and uses speech recognition to figure out where you are "
+            "in the script it then scrolls the display automatically "
+            "to keep up with you"
+        )
 
         # First get past the intro with correct words
-        intro = ("welcome to autocue hello and welcome to this demonstration "
-                 "of the autocue system today im going to walk you through "
-                 "how this teleprompter works and why it might be useful for "
-                 "your video production workflow how it works")
+        intro = (
+            "welcome to autocue hello and welcome to this demonstration "
+            "of the autocue system today im going to walk you through "
+            "how this teleprompter works and why it might be useful for "
+            "your video production workflow how it works"
+        )
         tracker.update(intro)
         pos_before_section = tracker.optimistic_position
 

@@ -1,187 +1,35 @@
-"""Tests for the transcript saving functionality."""
+"""Tests for verifying the tracking system follows transcripts smoothly.
 
-import asyncio
-import tempfile
+These tests use real transcript data to verify that the tracker:
+1. Follows the script accurately when given transcript piece by piece
+2. Does not jump around unexpectedly
+3. Does not backtrack or forward jump excessively
+4. Handles differences between transcription and script gracefully
+"""
+
 from pathlib import Path
-from unittest import mock
 
 import pytest
 
-from autocue.main import AutocueApp, TRANSCRIPT_DIR
-
-
-class TestTranscriptSaving:
-    """Test the transcript saving functionality."""
-
-    def test_transcript_disabled_by_default(self):
-        """Transcript saving should be disabled by default."""
-        app = AutocueApp()
-        assert not app.save_transcript
-        assert app.transcript_file is None
-
-    def test_transcript_enabled_via_parameter(self):
-        """Transcript saving can be enabled via constructor parameter."""
-        app = AutocueApp(save_transcript=True)
-        assert app.save_transcript
-        # File not created until _start_transcript is called
-        assert app.transcript_file is None
-
-    def test_write_transcript_no_op_when_disabled(self):
-        """_write_transcript() should do nothing when saving is disabled."""
-        app = AutocueApp(save_transcript=False)
-        # Should not raise even without transcript file
-        app._write_transcript("test text", is_partial=False)
-
-    def test_write_transcript_no_op_without_file(self):
-        """_write_transcript() should do nothing without transcript file."""
-        app = AutocueApp(save_transcript=True)
-        # File not initialized
-        app._write_transcript("test text", is_partial=False)
-        # Should not raise
-
-
-class TestDynamicTranscriptControl:
-    """Test the dynamic start/stop transcript functionality."""
-
-    @pytest.fixture
-    def mock_server(self):
-        """Create a mock server for testing."""
-        server = mock.AsyncMock()
-        server.send_transcript_status = mock.AsyncMock()
-        return server
-
-    @pytest.mark.asyncio
-    async def test_start_transcript_creates_file(self, mock_server):
-        """_start_transcript() should create a new transcript file."""
-        app = AutocueApp(save_transcript=False)
-        app.server = mock_server
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with mock.patch('autocue.main.TRANSCRIPT_DIR', Path(tmpdir)):
-                await app._start_transcript()
-
-                assert app.save_transcript is True
-                assert app.transcript_file is not None
-                assert app.transcript_file.exists()
-                mock_server.send_transcript_status.assert_called_once()
-                call_args = mock_server.send_transcript_status.call_args
-                assert call_args[0][0] is True  # recording=True
-
-    @pytest.mark.asyncio
-    async def test_start_transcript_no_op_if_already_recording(self, mock_server):
-        """_start_transcript() should be a no-op if already recording."""
-        app = AutocueApp(save_transcript=True)
-        app.server = mock_server
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with mock.patch('autocue.main.TRANSCRIPT_DIR', Path(tmpdir)):
-                # Start first time
-                await app._start_transcript()
-                first_file = app.transcript_file
-
-                # Reset mock
-                mock_server.send_transcript_status.reset_mock()
-
-                # Start again - should use same file
-                await app._start_transcript()
-                assert app.transcript_file == first_file
-                # Should still send status update
-                mock_server.send_transcript_status.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_stop_transcript_closes_file(self, mock_server):
-        """_stop_transcript() should close the transcript and clear state."""
-        app = AutocueApp(save_transcript=False)
-        app.server = mock_server
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with mock.patch('autocue.main.TRANSCRIPT_DIR', Path(tmpdir)):
-                # Start recording
-                await app._start_transcript()
-                transcript_file = app.transcript_file
-
-                # Stop recording
-                await app._stop_transcript()
-
-                assert app.save_transcript is False
-                assert app.transcript_file is None
-
-                # File should have end marker
-                assert transcript_file is not None, "File should have been created"
-                content = transcript_file.read_text()
-                assert "Transcript ended" in content
-
-                # Should send status update
-                call_args = mock_server.send_transcript_status.call_args
-                assert call_args[0][0] is False  # recording=False
-
-    @pytest.mark.asyncio
-    async def test_stop_transcript_no_op_if_not_recording(self, mock_server):
-        """_stop_transcript() should be a no-op if not recording."""
-        app = AutocueApp(save_transcript=False)
-        app.server = mock_server
-
-        await app._stop_transcript()
-
-        assert app.save_transcript is False
-        assert app.transcript_file is None
-        mock_server.send_transcript_status.assert_called_once_with(False)
-
-    @pytest.mark.asyncio
-    async def test_start_stop_cycle(self, mock_server):
-        """Test starting and stopping transcript multiple times."""
-        app = AutocueApp(save_transcript=False)
-        app.server = mock_server
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with mock.patch('autocue.main.TRANSCRIPT_DIR', Path(tmpdir)):
-                # First cycle
-                await app._start_transcript()
-                first_file = app.transcript_file
-                app._write_transcript("first recording", is_partial=False)
-                await app._stop_transcript()
-
-                # Wait a moment to ensure different timestamp
-                await asyncio.sleep(1.1)
-
-                # Second cycle
-                await app._start_transcript()
-                second_file = app.transcript_file
-                app._write_transcript("second recording", is_partial=False)
-                await app._stop_transcript()
-
-                # Files should be different (different timestamps)
-                assert first_file is not None, "First file should have been created"
-                assert second_file is not None, "Second file should have been created"
-                assert first_file != second_file
-                assert first_file.exists()
-                assert second_file.exists()
-
-                # Content should be correct
-                assert "first recording" in first_file.read_text()
-                assert "second recording" in second_file.read_text()
+from src.autocue.tracker import ScriptTracker
 
 
 class TestTranscriptTracking:
-    """Tests for verifying the tracking system follows transcripts smoothly.
-
-    These tests use real transcript data to verify that the tracker:
-    1. Follows the script accurately when given transcript piece by piece
-    2. Does not jump around unexpectedly
-    3. Does not backtrack or forward jump excessively
-    4. Handles differences between transcription and script gracefully
-    """
+    """Integration tests for tracking with real transcripts."""
 
     @pytest.fixture
     def number_test_script(self):
         """Load the number test script."""
-        script_path = Path(__file__).parent.parent / "samples" / "number_test_script.md"
+        script_path = Path(__file__).parent.parent.parent / "samples" / "number_test_script.md"
         return script_path.read_text()
 
     @pytest.fixture
     def number_test_transcript(self):
         """Load and parse the number test transcript, excluding start/end markers."""
-        transcript_path = Path(__file__).parent.parent / "transcripts" / "transcript_20251221_000011.txt"
+        transcript_path = (
+            Path(__file__).parent.parent.parent / "transcripts" /
+            "transcript_20251221_000011.txt"
+        )
         lines = transcript_path.read_text().strip().split("\n")
 
         # Filter out the "Transcript started" and "Transcript ended" lines
@@ -212,8 +60,6 @@ class TestTranscriptTracking:
         transcription and script (e.g., "one hundred" vs "100") and advance
         smoothly through the script.
         """
-        from src.autocue.tracker import ScriptTracker
-
         tracker = ScriptTracker(number_test_script)
 
         # Build cumulative transcript word by word
@@ -260,8 +106,6 @@ class TestTranscriptTracking:
         For chunk updates, jumps should be proportional to the number of words in the chunk.
         We verify that no jump exceeds the chunk size by more than a small margin.
         """
-        from src.autocue.tracker import ScriptTracker
-
         tracker = ScriptTracker(number_test_script)
 
         last_position = 0
@@ -301,8 +145,6 @@ class TestTranscriptTracking:
 
     def test_no_backtracking(self, number_test_script, number_test_transcript):
         """Verify that tracking never goes backward unexpectedly."""
-        from src.autocue.tracker import ScriptTracker
-
         tracker = ScriptTracker(number_test_script)
 
         high_water_mark = 0
@@ -333,14 +175,13 @@ class TestTranscriptTracking:
                 high_water_mark = current_position
 
         # There should be no backtracks (or very few, very small ones)
-        assert largest_backtrack <= 2, f"Largest backtrack was {largest_backtrack} words, expected <= 2"
+        assert largest_backtrack <= 2, \
+            f"Largest backtrack was {largest_backtrack} words, expected <= 2"
         # Allow a few small backtracks due to speech recognition differences
         assert backtrack_count <= 3, f"Backtrack count was {backtrack_count}, expected <= 3"
 
     def test_no_forward_jumps(self, number_test_script, number_test_transcript):
         """Verify that tracking never jumps forward unexpectedly."""
-        from src.autocue.tracker import ScriptTracker
-
         tracker = ScriptTracker(number_test_script)
 
         large_jump_count = 0
@@ -375,7 +216,8 @@ class TestTranscriptTracking:
 
         # Large forward jumps should be rare
         # We allow some due to word skipping (speaker skips a word)
-        assert largest_forward_jump <= 5, f"Largest forward jump was {largest_forward_jump} words, expected <= 5"
+        assert largest_forward_jump <= 5, \
+            f"Largest forward jump was {largest_forward_jump} words, expected <= 5"
         # Most updates should advance by 0-2 words
         total_updates = len(all_words)
         jump_ratio = large_jump_count / total_updates
@@ -387,8 +229,6 @@ class TestTranscriptTracking:
         This test adds 1-4 words at a time. For small chunks, jumps should be small.
         Larger jumps indicate validation corrections which should be rare.
         """
-        from src.autocue.tracker import ScriptTracker
-
         tracker = ScriptTracker(number_test_script)
 
         last_position = 0
@@ -440,10 +280,10 @@ class TestTranscriptTracking:
         final_progress = tracker.progress
         assert final_progress > 0.8, f"Final progress was {final_progress:.2%}, expected > 80%"
 
-    def test_position_never_exceeds_script_length(self, number_test_script, number_test_transcript):
+    def test_position_never_exceeds_script_length(
+        self, number_test_script, number_test_transcript
+    ):
         """Verify position never goes beyond the script length."""
-        from src.autocue.tracker import ScriptTracker
-
         tracker = ScriptTracker(number_test_script)
         script_length = len(tracker.words)
 
@@ -463,10 +303,10 @@ class TestTranscriptTracking:
             assert pos.speakable_index <= script_length, \
                 f"Position {pos.speakable_index} exceeded script length {script_length}"
 
-    def test_consistent_position_on_repeated_updates(self, number_test_script, number_test_transcript):
+    def test_consistent_position_on_repeated_updates(
+        self, number_test_script, number_test_transcript
+    ):
         """Verify that updating with the same text doesn't change position."""
-        from src.autocue.tracker import ScriptTracker
-
         tracker = ScriptTracker(number_test_script)
 
         # Build up some context first
@@ -478,12 +318,11 @@ class TestTranscriptTracking:
 
         # Position should not change when text doesn't change
         assert pos1.speakable_index == pos2.speakable_index == pos3.speakable_index, \
-            f"Position changed on repeated updates: {pos1.speakable_index}, {pos2.speakable_index}, {pos3.speakable_index}"
+            (f"Position changed on repeated updates: "
+             f"{pos1.speakable_index}, {pos2.speakable_index}, {pos3.speakable_index}")
 
     def test_steady_progress_through_script(self, number_test_script, number_test_transcript):
         """Verify steady forward progress through the script."""
-        from src.autocue.tracker import ScriptTracker
-
         tracker = ScriptTracker(number_test_script)
 
         all_words = []
@@ -519,4 +358,5 @@ class TestTranscriptTracking:
         # Progress samples should span a good range
         if len(progress_samples) >= 2:
             progress_range = progress_samples[-1] - progress_samples[0]
-            assert progress_range > 0.5, f"Progress range was only {progress_range:.2%}, expected > 50%"
+            assert progress_range > 0.5, \
+                f"Progress range was only {progress_range:.2%}, expected > 50%"
