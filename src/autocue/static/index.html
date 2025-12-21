@@ -569,7 +569,7 @@ The prompter will track your speech and scroll automatically."></textarea>
         <button id="exit-btn" onclick="exitPrompter()">← Exit</button>
         <button id="transcript-btn" onclick="toggleTranscript()">
             <span class="record-dot"></span>
-            <span id="transcript-btn-text">Record</span>
+            <span id="transcript-btn-text">Transcribe</span>
         </button>
         <div id="transcript"></div>
     </div>
@@ -690,12 +690,12 @@ The prompter will track your speech and scroll automatically."></textarea>
             if (recording) {
                 btn.classList.add('recording');
                 dot.classList.add('active');
-                btnText.textContent = 'Recording';
+                btnText.textContent = 'Transcribing';
                 if (checkbox) checkbox.checked = true;
             } else {
                 btn.classList.remove('recording');
                 dot.classList.remove('active');
-                btnText.textContent = 'Record';
+                btnText.textContent = 'Transcribe';
                 if (checkbox) checkbox.checked = false;
             }
         }

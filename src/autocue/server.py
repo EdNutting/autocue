@@ -3,23 +3,20 @@ Web server for the autocue interface.
 Serves the HTML UI and handles WebSocket connections for real-time updates.
 """
 
-import asyncio
 import json
 import logging
 import re
-import markdown
-from html.parser import HTMLParser
 from pathlib import Path
+from html.parser import HTMLParser
 from typing import Optional, Set, List, Tuple, Dict
+
 from aiohttp import web
+import markdown
+import sounddevice as sd
 
 from .config import load_config, save_config, update_config_display
 from . import debug_log
-from .script_parser import (
-    ParsedScript, parse_script, RawToken,
-    PUNCTUATION_EXPANSIONS, is_silent_punctuation
-)
-import sounddevice as sd
+from .script_parser import ParsedScript, parse_script, RawToken
 
 logger = logging.getLogger(__name__)
 
@@ -195,12 +192,12 @@ class WebServer:
         self.script_text: str = ""
         self.script_html: str = ""
         self.total_words: int = 0
-        self._reset_requested: bool = False
-        self._jump_requested: Optional[int] = None
+        self.reset_requested: bool = False
+        self.jump_requested: Optional[int] = None
         # True=start, False=stop
-        self._transcript_toggle_requested: Optional[bool] = None
+        self.transcript_toggle_requested: Optional[bool] = None
         # Start transcript when script loads
-        self._start_transcript_on_script: bool = False
+        self.start_transcript_on_script: bool = False
 
         # Merge initial settings with defaults
         self.settings = self.DEFAULT_SETTINGS.copy()
@@ -303,12 +300,12 @@ class WebServer:
         if handler:
             await handler(ws, data)
         else:
-            logger.warning(f"Unhandled WebSocket message: {msg_type}")
+            logger.warning("Unhandled WebSocket message: %s", msg_type)
 
     async def _on_script_message(self, _ws: web.WebSocketResponse, data: dict):
         """Handle script update message."""
         self.script_text = data.get("text", "")
-        self._start_transcript_on_script = data.get("saveTranscript", False)
+        self.start_transcript_on_script = data.get("saveTranscript", False)
         await self._render_and_broadcast_script()
 
     async def _on_settings_message(self, _ws: web.WebSocketResponse, data: dict):
@@ -322,7 +319,7 @@ class WebServer:
     async def _on_reset_message(self, _ws: web.WebSocketResponse, _data: dict):
         """Handle reset message."""
         await self.broadcast({"type": "reset"})
-        self._reset_requested = True
+        self.reset_requested = True
 
     async def _on_jump_to_message(self, _ws: web.WebSocketResponse, data: dict):
         """Handle jump to position message."""
@@ -331,7 +328,7 @@ class WebServer:
             "type": "jump_to",
             "wordIndex": word_index
         })
-        self._jump_requested = word_index
+        self.jump_requested = word_index
 
     async def _on_save_config_message(self, ws: web.WebSocketResponse, _data: dict):
         """Handle save config message."""
@@ -372,7 +369,7 @@ class WebServer:
 
     async def _on_toggle_transcript_message(self, _ws: web.WebSocketResponse, data: dict):
         """Handle toggle transcript message."""
-        self._transcript_toggle_requested = data.get("enable", False)
+        self.transcript_toggle_requested = data.get("enable", False)
 
     async def _on_set_audio_device_message(self, ws: web.WebSocketResponse, data: dict):
         """Handle set audio device message."""

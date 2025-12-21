@@ -141,13 +141,13 @@ class AutocueApp:
         )
         await self.server.start()
 
-        print(f"\n✓ Autocue ready!")
-        print(f"  Open http://{self.host}:{self.port} in your browser")
-        print(f"  Press Ctrl+C to stop\n")
-
         # Start audio processing
         self.running = True
         self.audio.start()
+
+        print("\n✓ Autocue ready!")
+        print(f"  Open http://{self.host}:{self.port} in your browser")
+        print("  Press Ctrl+C to stop\n")
 
         # Main processing loop
         await self._process_loop()
@@ -181,14 +181,14 @@ class AutocueApp:
                 self._last_sent_line_index = None
                 self._last_sent_word_offset = None
                 # Start transcript if preference was set (via UI checkbox or CLI flag)
-                if self.server._start_transcript_on_script or self.save_transcript:
-                    self.server._start_transcript_on_script = False  # Reset flag
+                if self.server.start_transcript_on_script or self.save_transcript:
+                    self.server.start_transcript_on_script = False  # Reset flag
                     if not self.transcript_file:  # Don't restart if already recording
                         await self._start_transcript()
 
             # Check for reset request
-            if self.server._reset_requested:
-                self.server._reset_requested = False
+            if self.server.reset_requested:
+                self.server.reset_requested = False
                 if self.tracker:
                     self.tracker.reset()
                     print("Position reset to beginning")
@@ -198,9 +198,9 @@ class AutocueApp:
                     self._last_sent_word_offset = None
 
             # Check for jump request
-            if self.server._jump_requested is not None:
-                jump_to = self.server._jump_requested
-                self.server._jump_requested = None
+            if self.server.jump_requested is not None:
+                jump_to = self.server.jump_requested
+                self.server.jump_requested = None
                 if self.tracker:
                     self.tracker.jump_to(jump_to)
                     print(f"Jumped to word index {jump_to}")
@@ -210,9 +210,9 @@ class AutocueApp:
                     self._last_sent_word_offset = None
 
             # Check for transcript toggle request
-            if self.server._transcript_toggle_requested is not None:
-                enable = self.server._transcript_toggle_requested
-                self.server._transcript_toggle_requested = None
+            if self.server.transcript_toggle_requested is not None:
+                enable = self.server.transcript_toggle_requested
+                self.server.transcript_toggle_requested = None
                 if enable:
                     await self._start_transcript()
                 else:
@@ -253,7 +253,7 @@ class AutocueApp:
                                 "original_pos=%d",
                                 is_backtrack, validated_pos, position.word_index
                             )
-                            position = self.tracker._current_position()
+                            position = self.tracker.current_position()
                             position.is_backtrack = is_backtrack
                         if is_backtrack:
                             logger.warning(
@@ -263,7 +263,7 @@ class AutocueApp:
                             )
 
                     # Get display info
-                    lines, current_line_idx, word_offset = self.tracker.get_display_lines(
+                    _lines, _current_line_idx, word_offset = self.tracker.get_display_lines(
                         past_lines=self.server.settings.get("pastLines", 1),
                         future_lines=self.server.settings.get("futureLines", 8)
                     )
