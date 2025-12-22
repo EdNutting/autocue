@@ -132,7 +132,7 @@ class TestBacktrackSkipDisable:
 
         # Advance and set transcript
         tracker.update("beginning middle end")
-        assert tracker.last_transcription == "beginning middle end"
+        assert tracker.committed_state.last_transcription == "beginning middle end"
         assert tracker.skip_disabled_count == 0
 
         # Simulate backtrack via validate_position

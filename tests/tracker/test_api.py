@@ -19,7 +19,7 @@ class TestResetAndJump:
 
         assert tracker.optimistic_position == 0
         assert tracker.current_word_index == 0
-        assert tracker.last_transcription == ""
+        assert tracker.committed_state.last_transcription == ""
         assert tracker.words_since_validation == 0
 
     def test_jump_to_position(self) -> None:
@@ -30,7 +30,7 @@ class TestResetAndJump:
 
         assert tracker.optimistic_position == 3
         assert tracker.current_word_index == 3
-        assert tracker.last_transcription == ""
+        assert tracker.committed_state.last_transcription == ""
 
     def test_jump_clamps_to_valid_range(self) -> None:
         """Jump should clamp to valid word indices."""
@@ -51,7 +51,7 @@ class TestExtractNewWords:
         tracker: ScriptTracker = ScriptTracker("the quick brown fox")
 
         tracker.update("the quick")
-        new_words: list[str] = tracker.extract_new_words("the quick brown")
+        new_words: list[str] = tracker.extract_new_words("the quick brown", tracker.committed_state)
 
         assert new_words == ["brown"]
 
@@ -60,18 +60,18 @@ class TestExtractNewWords:
         tracker: ScriptTracker = ScriptTracker("the quick brown fox")
 
         # First transcription
-        new_words: list[str] = tracker.extract_new_words("hello world")
+        new_words: list[str] = tracker.extract_new_words("hello world", tracker.committed_state)
         assert len(new_words) > 0
 
     def test_extract_new_words_no_match(self) -> None:
         """Should return recent words when no prefix match."""
         tracker: ScriptTracker = ScriptTracker("the quick brown fox")
-        tracker.last_transcription = "completely different"
+        tracker.committed_state.last_transcription = "completely different"
 
         new_words: list[str] = tracker.extract_new_words(
-            "hello world testing")
-        # Should return last 3 words when no prefix match
-        assert len(new_words) <= 3
+            "hello world testing", tracker.committed_state)
+        # Should return all words when no prefix match
+        assert new_words == ["hello", "world", "testing"]
 
 
 class TestDisplayMethods:

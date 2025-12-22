@@ -29,6 +29,8 @@ class TrackingState:
     word_queue: list[str] = field(default_factory=list)
     last_matched_spoken: str | None = None
     expansion_matcher: 'ExpansionMatcher | None' = None
+    last_transcription: str = ""  # Last final transcription processed by this state
+    current_transcription: str = ""  # Current full transcription being processed
 
     def clone(self) -> 'TrackingState':
         """Create a deep copy of this tracking state."""
@@ -36,7 +38,9 @@ class TrackingState:
             optimistic_position=self.optimistic_position,
             word_queue=self.word_queue.copy(),
             last_matched_spoken=self.last_matched_spoken,
-            expansion_matcher=self.expansion_matcher.clone() if self.expansion_matcher else None
+            expansion_matcher=self.expansion_matcher.clone() if self.expansion_matcher else None,
+            last_transcription=self.last_transcription,
+            current_transcription=self.current_transcription
         )
 
 
@@ -163,9 +167,9 @@ class ScriptTracker:
 
         # Tracking state (all indices are speakable word indices)
         self.current_word_index = 0
-        self.last_transcription = ""  # Track previous transcript to detect new words
         self.words_since_validation = 0  # Counter for validation triggering
-        self.skip_disabled_count = 0  # Counter to temporarily disable skip logic after backtrack
+        # Counter to temporarily disable skip logic after backtrack
+        self.skip_disabled_count = 0
         self.last_update_was_jump = False  # Track if last update was a jump
 
         # Dynamic expansion matching (handles numbers/punctuation alternatives)
@@ -177,7 +181,8 @@ class ScriptTracker:
             optimistic_position=0,
             word_queue=[],
             last_matched_spoken=None,
-            expansion_matcher=self._expansion_matcher.clone()
+            expansion_matcher=self._expansion_matcher.clone(),
+            last_transcription=""
         )
 
         # Display positions
@@ -274,15 +279,15 @@ class ScriptTracker:
         # Fuzzy match for speech recognition errors
         return fuzz.ratio(spoken_norm, script_norm) >= self.match_threshold
 
-    def extract_new_words(self, transcription: str) -> list[str]:
+    def extract_new_words(self, transcription: str, state: TrackingState) -> list[str]:
         """
         Extract only the NEW words from the transcription.
-        Compares with last_transcription to find what was just spoken.
+        Compares with state's last_transcription to find what was just spoken.
         """
         current_words: list[str] = [
             w for w in transcription.split() if w.strip()]
         last_words: list[str] = [
-            w for w in self.last_transcription.split() if w.strip()]
+            w for w in state.last_transcription.split() if w.strip()]
 
         # Find where the new words start
         # Usually the new transcription extends the previous one
@@ -372,7 +377,8 @@ class ScriptTracker:
             self._expansion_matcher = speculative_state.expansion_matcher
 
         # Process words speculatively (don't update validation counter)
-        self._process_words(speculative_state, self.max_skip_distance, update_validation_counter=False)
+        self._process_words(
+            speculative_state, self.max_skip_distance, update_validation_counter=False)
 
         # If words remain unmatched, try recovery by dropping words one at a time
         # This helps recover from single misheard/misspoken words in partial results
@@ -387,7 +393,8 @@ class ScriptTracker:
 
             # Try processing remaining words
             if speculative_state.word_queue:
-                self._process_words(speculative_state, self.max_skip_distance, update_validation_counter=False)
+                self._process_words(
+                    speculative_state, self.max_skip_distance, update_validation_counter=False)
 
                 # If we made progress (queue got shorter), keep trying
                 if len(speculative_state.word_queue) < initial_queue_len - 1:
@@ -422,9 +429,10 @@ class ScriptTracker:
         print(f"Final: Processing '{transcription}'")
 
         # Extract only the NEW words from the transcription
-        new_words: list[str] = self.extract_new_words(transcription)
+        new_words: list[str] = self.extract_new_words(
+            transcription, self.committed_state)
         if not new_words:
-            self.last_transcription = transcription
+            self.committed_state.last_transcription = transcription
             # Clear speculative state even if no new words
             self.speculative_display_position = self.committed_display_position
             self.last_partial_transcription = ""
@@ -443,6 +451,9 @@ class ScriptTracker:
         if self.committed_state.expansion_matcher:
             self._expansion_matcher = self.committed_state.expansion_matcher
 
+        # Store the full transcription in state for jump detection context
+        self.committed_state.current_transcription = transcription
+
         # Process words on committed state
         self._process_words(self.committed_state, 2 * self.max_skip_distance)
 
@@ -459,7 +470,8 @@ class ScriptTracker:
 
             # Try processing remaining words
             if self.committed_state.word_queue:
-                self._process_words(self.committed_state, 2 * self.max_skip_distance)
+                self._process_words(self.committed_state,
+                                    2 * self.max_skip_distance)
 
                 # If we made progress (queue got shorter), keep trying
                 if len(self.committed_state.word_queue) < initial_queue_len - 1:
@@ -473,8 +485,9 @@ class ScriptTracker:
             self.committed_state.word_queue.clear()
 
         # Update committed display position
+        direction = "forward" if self.committed_display_position < self.committed_state.optimistic_position else "backward"
         print(
-            f"Final({'→' if self.committed_display_position < self.committed_state.optimistic_position else '←'}): Moving committed position from {self.committed_display_position} to {self.committed_state.optimistic_position}")
+            f"Final({direction}): Moving committed position from {self.committed_display_position} to {self.committed_state.optimistic_position}")
         self.committed_display_position = self.committed_state.optimistic_position
 
         # Update expansion matcher in committed state
@@ -488,7 +501,7 @@ class ScriptTracker:
         self.current_word_index = self.committed_display_position
 
         # Store transcription for next comparison
-        self.last_transcription = transcription
+        self.committed_state.last_transcription = transcription
 
         return self.current_position
 
@@ -496,7 +509,6 @@ class ScriptTracker:
         """Reset tracking to the beginning of the script."""
         # Reset tracking state
         self.current_word_index = 0
-        self.last_transcription = ""
         self.words_since_validation = 0
         self.skip_disabled_count = 0
         # Reset committed state
@@ -504,7 +516,8 @@ class ScriptTracker:
             optimistic_position=0,
             word_queue=[],
             last_matched_spoken=None,
-            expansion_matcher=self._expansion_matcher.clone()
+            expansion_matcher=self._expansion_matcher.clone(),
+            last_transcription=""
         )
         # Reset display positions
         self.committed_display_position = 0
@@ -598,7 +611,8 @@ class ScriptTracker:
                 state.word_queue.insert(0, spoken_word)
                 # Only use skip logic if not disabled
                 if self.skip_disabled_count == 0:
-                    match_result = self._match_words_with_skipping(state, max_skip_distance)
+                    match_result = self._match_words_with_skipping(
+                        state, max_skip_distance)
                 else:
                     match_result = ManyWordMatchResult(0, 0)
                 if match_result.matches > 0:
@@ -834,24 +848,38 @@ class ScriptTracker:
         """
         # Need enough words to reliably detect position
         if len(state.word_queue) < 3:
+            print(
+                f"Jump detection: Skipping (insufficient words: {len(state.word_queue)} < 3)")
             return state.optimistic_position, False
 
-        # Build transcription from word queue
-        transcription = ' '.join(state.word_queue)
+        # Use full current transcription if available (provides better context)
+        # Otherwise fall back to word queue
+        transcription = state.current_transcription if state.current_transcription else ' '.join(
+            state.word_queue)
+        print(
+            f"Jump detection: Checking transcription '{transcription}' at position {state.optimistic_position}")
 
         # Use window-based matching to find where these words are
         best_index, confidence = self._find_best_match(transcription)
+        print(
+            f"Jump detection: Best match at index {best_index} with confidence {confidence:.1f}")
 
         # Low confidence match - can't determine position reliably
         if confidence < self.match_threshold:
+            print(
+                f"Jump detection: Skipping (low confidence: {confidence:.1f} < {self.match_threshold})")
             return state.optimistic_position, False
 
         # Calculate deviation from optimistic position
         position_diff = state.optimistic_position - best_index
+        print(
+            f"Jump detection: Position diff = {position_diff} (optimistic={state.optimistic_position}, best={best_index})")
 
         # If deviation is small, trust the optimistic position
         # This prevents repeated words from causing false jump detection
         if abs(position_diff) <= self.jump_threshold:
+            print(
+                f"Jump detection: Skipping (small deviation: {abs(position_diff)} <= {self.jump_threshold})")
             return state.optimistic_position, False
 
         # Before considering a jump, check if the transcript words
@@ -859,29 +887,34 @@ class ScriptTracker:
         # If they do, trust the optimistic position.
         transcript_words = [w for w in transcription.split() if w.strip()]
         if self._transcript_matches_position(transcript_words, state.optimistic_position):
+            print("Jump detection: Skipping (transcript matches current position)")
             return state.optimistic_position, False
 
         # Reject jumps that are too large - prevents jumping to similar sentences
         # far away in the script (e.g., repeated phrases in different paragraphs)
         jump_distance = abs(position_diff)
         if jump_distance > self.max_jump_distance:
+            print(
+                f"Jump detection: Skipping (jump too large: {jump_distance} > {self.max_jump_distance})")
             return state.optimistic_position, False
 
         # Determine jump type
         # Backtrack: validated position is significantly behind where we currently are
         is_backtrack = (
-            best_index < self.current_word_index - self.jump_threshold and
-            self.current_word_index > 0 and
+            best_index < state.optimistic_position - self.jump_threshold and
+            state.optimistic_position > 0 and
             position_diff > self.jump_threshold
         )
 
         # Forward jump: validated position is significantly ahead of where we are
         is_forward_jump = (
             position_diff < -self.jump_threshold and
-            best_index > self.current_word_index
+            best_index > state.optimistic_position
         )
 
         if not (is_backtrack or is_forward_jump):
+            print(
+                f"Jump detection: Skipping (not classified as jump: backtrack={is_backtrack}, forward={is_forward_jump})")
             return state.optimistic_position, False
 
         # Find where the first transcript word actually matches within the window
@@ -916,6 +949,7 @@ class ScriptTracker:
 
         # Disable skip logic temporarily after a backtrack to prevent stale word matching
         if is_backtrack:
+            print("Jump detection: Disabling skip logic for next 3 matches")
             self.skip_disabled_count = 3
 
         # Clear expansion state - we're at a new position
@@ -943,6 +977,8 @@ class ScriptTracker:
         # Create a temporary state with the transcription words
         temp_state = self.committed_state.clone()
         temp_state.word_queue = [w for w in transcription.split() if w.strip()]
+        # Provide full context for jump detection
+        temp_state.current_transcription = transcription
 
         # Detect jump using internal method
         new_position, is_jump = self._detect_jump_internal(temp_state)
