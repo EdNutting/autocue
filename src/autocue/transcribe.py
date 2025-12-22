@@ -103,14 +103,14 @@ class Transcriber:
             # Final result - speech segment complete
             result: dict[str, Any] = json.loads(self.recognizer.Result())
             text: str = result.get("text", "").strip()
-            if text:
+            if text and not self._is_vosk_artifact(text):
                 return TranscriptionResult(text, is_partial=False)
         else:
             # Partial result - speech still in progress
             result: dict[str, Any] = json.loads(
                 self.recognizer.PartialResult())
             text: str = result.get("partial", "").strip()
-            if text:
+            if text and not self._is_vosk_artifact(text):
                 return TranscriptionResult(text, is_partial=True)
 
         return None
@@ -120,11 +120,25 @@ class Transcriber:
         self.recognizer = KaldiRecognizer(self.model, self.sample_rate)
         self.recognizer.SetWords(True)
 
+    def _is_vosk_artifact(self, text: str) -> bool:
+        """
+        Check if the text is a known Vosk artifact from no/bad audio input.
+
+        Vosk sometimes returns "the" when there's no valid sound input.
+
+        Args:
+            text: The transcribed text to check
+
+        Returns:
+            True if the text is a known artifact that should be filtered out
+        """
+        return text.lower() == "the"
+
     def get_final(self) -> TranscriptionResult | None:
         """Get any remaining buffered speech as final result."""
         result: dict[str, Any] = json.loads(self.recognizer.FinalResult())
         text: str = result.get("text", "").strip()
-        if text:
+        if text and not self._is_vosk_artifact(text):
             return TranscriptionResult(text, is_partial=False)
         return None
 
