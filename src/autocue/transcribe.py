@@ -1,195 +1,106 @@
 """
-Speech transcription module using Vosk for low-latency streaming recognition.
-Provides partial results as speech is happening, not just final results.
+Speech transcription module - compatibility wrapper.
+
+This module provides backward compatibility for code using the old Transcriber interface.
+New code should use the provider system directly from autocue.providers.
 """
 
-import json
-import os
-from pathlib import Path
-from typing import Any
+from collections.abc import Callable
 
-from vosk import KaldiRecognizer, Model, SetLogLevel
+from .providers import create_provider
+from .transcription_provider import TranscriptionResult
 
-# Suppress Vosk's verbose logging
-SetLogLevel(-1)
-
-
-class TranscriptionResult:
-    """Represents a transcription result from Vosk."""
-
-    text: str
-    is_partial: bool
-    confidence: float
-
-    def __init__(self, text: str, is_partial: bool, confidence: float = 1.0) -> None:
-        self.text = text
-        self.is_partial = is_partial
-        self.confidence = confidence
-
-    def __repr__(self) -> str:
-        status: str = "partial" if self.is_partial else "final"
-        return f"TranscriptionResult({status}: '{self.text}')"
+# Re-export TranscriptionResult for backward compatibility
+__all__ = ["TranscriptionResult", "Transcriber", "download_model"]
 
 
 class Transcriber:
     """
-    Streaming speech transcriber using Vosk.
+    Backward-compatible transcriber wrapper.
 
-    Vosk is designed for real-time streaming and provides:
-    - Partial results while speaking (low latency)
-    - Final results when speech pauses
-    - Runs entirely locally
+    This class maintains the old Transcriber API while delegating to the new provider system.
+    For new code, use the provider system directly: from autocue.providers import create_provider
     """
-
-    # Model download URLs and names
-    MODELS: dict[str, str] = {
-        "small": "vosk-model-small-en-us-0.15",  # ~40MB, fastest
-        "medium": "vosk-model-en-us-0.22",        # ~1.8GB, better accuracy
-        "large": "vosk-model-en-us-0.42-gigaspeech",  # ~2.3GB, best accuracy
-    }
-
-    sample_rate: int
-    model_path: str
-    model: Model
-    recognizer: KaldiRecognizer
 
     def __init__(
         self,
         model_path: str | None = None,
         model_name: str = "small",
-        sample_rate: int = 16000
+        sample_rate: int = 16000,
+        provider: str = "vosk",
+        model_id: str | None = None,
     ) -> None:
         """
         Initialize the transcriber.
 
         Args:
-            model_path: Path to Vosk model directory, or None to auto-download
-            model_name: One of "small", "medium", "large" if model_path is None
+            model_path: Path to model directory (old API, deprecated)
+            model_name: Model size name (old API: "small"/"medium"/"large", deprecated)
             sample_rate: Audio sample rate (must match audio capture)
+            provider: Provider name ("vosk" or "sherpa")
+            model_id: New-style model identifier (e.g., "vosk-en-us-small")
         """
+        # Handle backward compatibility
+        if model_id is None:
+            # Old-style initialization - convert to new format
+            if model_path:
+                # Custom model path - use as-is
+                # Assume it's a Vosk model since that's what the old API supported
+                self._provider = create_provider(
+                    provider, model_path, sample_rate)
+            else:
+                # Model name - convert to new model_id format
+                model_id = f"vosk-en-us-{model_name}"
+                self._provider = create_provider(
+                    provider, model_id, sample_rate)
+        else:
+            # New-style initialization
+            self._provider = create_provider(provider, model_id, sample_rate)
+
         self.sample_rate = sample_rate
-        self.model_path = model_path or self._get_model_path(model_name)
-
-        print(f"Loading Vosk model from: {self.model_path}")
-        if not os.path.exists(self.model_path):
-            raise RuntimeError(
-                f"Model not found at {self.model_path}. "
-                f"Please download from https://alphacephei.com/vosk/models "
-                f"and extract to this path, or run 'autocue --download-model'"
-            )
-
-        self.model = Model(self.model_path)
-        self.recognizer = KaldiRecognizer(self.model, sample_rate)
-        self.recognizer.SetWords(True)  # Include word-level timing
-
-    def _get_model_path(self, model_name: str) -> str:
-        """Get the default model path for the given model name."""
-        # Store models in user's cache directory
-        cache_dir: Path = Path.home() / ".cache" / "autocue" / "models"
-        model_dir_name: str = self.MODELS.get(model_name, model_name)
-        return str(cache_dir / model_dir_name)
 
     def process_audio(self, audio_data: bytes) -> TranscriptionResult | None:
-        """
-        Process an audio chunk and return transcription result.
-
-        Args:
-            audio_data: Raw audio bytes (16-bit PCM, mono)
-
-        Returns:
-            TranscriptionResult with partial or final text, or None if no speech
-        """
-        if self.recognizer.AcceptWaveform(audio_data):
-            # Final result - speech segment complete
-            result: dict[str, Any] = json.loads(self.recognizer.Result())
-            text: str = result.get("text", "").strip()
-            if text and not self._is_vosk_artifact(text):
-                return TranscriptionResult(text, is_partial=False)
-        else:
-            # Partial result - speech still in progress
-            result: dict[str, Any] = json.loads(
-                self.recognizer.PartialResult())
-            text: str = result.get("partial", "").strip()
-            if text and not self._is_vosk_artifact(text):
-                return TranscriptionResult(text, is_partial=True)
-
-        return None
+        """Process an audio chunk and return transcription result."""
+        return self._provider.process_audio(audio_data)
 
     def reset(self) -> None:
-        """Reset the recognizer state (e.g., after a long pause)."""
-        self.recognizer = KaldiRecognizer(self.model, self.sample_rate)
-        self.recognizer.SetWords(True)
-
-    def _is_vosk_artifact(self, text: str) -> bool:
-        """
-        Check if the text is a known Vosk artifact from no/bad audio input.
-
-        Vosk sometimes returns "the" when there's no valid sound input.
-
-        Args:
-            text: The transcribed text to check
-
-        Returns:
-            True if the text is a known artifact that should be filtered out
-        """
-        return text.lower() == "the"
+        """Reset the recognizer state."""
+        self._provider.reset()
 
     def get_final(self) -> TranscriptionResult | None:
         """Get any remaining buffered speech as final result."""
-        result: dict[str, Any] = json.loads(self.recognizer.FinalResult())
-        text: str = result.get("text", "").strip()
-        if text and not self._is_vosk_artifact(text):
-            return TranscriptionResult(text, is_partial=False)
-        return None
+        return self._provider.get_final()
 
 
-def download_model(model_name: str = "small", target_dir: str | None = None) -> str:
+def download_model(model_name: str = "small", target_dir: str | None = None,
+                   progress_callback: Callable[[str, int], None] | None = None) -> str:
     """
-    Download a Vosk model.
+    Download a model.
+
+    This function supports both old-style model names ("small", "medium", "large")
+    and new-style model IDs ("vosk-en-us-small", "sherpa-zipformer-en-2023-06-26").
 
     Args:
-        model_name: One of "small", "medium", "large"
+        model_name: Model name or ID
         target_dir: Directory to save the model, or None for default
 
     Returns:
         Path to the downloaded model as a string.
     """
-    import tempfile  # pylint: disable=import-outside-toplevel
-    import urllib.request  # pylint: disable=import-outside-toplevel
-    import zipfile  # pylint: disable=import-outside-toplevel
+    # Detect if this is a new-style model ID or old-style name
+    if model_name.startswith("vosk-"):
+        # New-style Vosk model ID
+        from .providers.vosk_provider import VoskProvider
 
-    model_dir_name: str | None = Transcriber.MODELS.get(model_name)
-    if not model_dir_name:
-        raise ValueError(
-            f"Unknown model: {model_name}. Choose from: {list(Transcriber.MODELS.keys())}")
+        return VoskProvider.download_model(model_name, target_dir)
+    elif model_name.startswith("sherpa-"):
+        # Sherpa model ID
+        from .providers.sherpa_provider import SherpaProvider
 
-    if target_dir is None:
-        target_path: Path = Path.home() / ".cache" / "autocue" / "models"
+        return SherpaProvider.download_model(model_name, target_dir)
     else:
-        target_path: Path = Path(target_dir)
+        # Old-style model name - convert to new format
+        model_id = f"vosk-en-us-{model_name}"
+        from .providers.vosk_provider import VoskProvider
 
-    target_path.mkdir(parents=True, exist_ok=True)
-    model_path: Path = target_path / model_dir_name
-
-    if model_path.exists():
-        print(f"Model already exists at {model_path}")
-        return str(model_path)
-
-    url: str = f"https://alphacephei.com/vosk/models/{model_dir_name}.zip"
-    print(f"Downloading {model_name} model from {url}...")
-    print("This may take a few minutes depending on your connection.")
-
-    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-        urllib.request.urlretrieve(url, tmp.name)
-
-        print("Extracting model...")
-        with zipfile.ZipFile(tmp.name, 'r') as zf:
-            zf.extractall(target_path)
-
-        print("Done. Removing temporary file...")
-        os.unlink(tmp.name)
-
-        print("Complete.")
-
-    print(f"Model installed to {model_path}")
-    return str(model_path)
+        return VoskProvider.download_model(model_id, target_dir)

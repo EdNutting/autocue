@@ -436,6 +436,53 @@
             max-height: 60px;
             overflow: hidden;
         }
+
+        /* Loading spinner overlay */
+        #loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(10, 10, 10, 0.95);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        #loading-overlay.visible {
+            display: flex;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(255, 215, 0, 0.2);
+            border-top-color: #FFD700;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-family: "Inter", sans-serif;
+            font-size: 16px;
+            color: #aaa;
+            text-align: center;
+        }
+
+        .loading-model {
+            font-family: "Inter", sans-serif;
+            font-size: 13px;
+            color: #666;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -516,6 +563,33 @@ The prompter will track your speech and scroll automatically."></textarea>
             </div>
 
             <div class="settings-section">
+                <div class="settings-title">Transcription</div>
+                <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                    <span class="setting-label">Provider</span>
+                    <select class="setting-select" id="transcription-provider-select" style="width: 100%;">
+                        <option value="vosk">Vosk</option>
+                        <option value="sherpa">Sherpa-ONNX</option>
+                    </select>
+                </div>
+                <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                    <span class="setting-label">Model</span>
+                    <select class="setting-select" id="transcription-model-select" style="width: 100%;">
+                        <option value="">Loading models...</option>
+                    </select>
+                    <span id="transcription-status" style="font-family: 'Inter', sans-serif; font-size: 11px; color: #666;"></span>
+                    <div id="model-download-progress" style="display: none; width: 100%; margin-top: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <span id="model-download-stage" style="font-family: 'Inter', sans-serif; font-size: 11px; color: #888;">Downloading...</span>
+                            <span id="model-download-percent" style="font-family: 'Inter', sans-serif; font-size: 11px; color: #888;">0%</span>
+                        </div>
+                        <div style="width: 100%; height: 4px; background: #333; border-radius: 2px; overflow: hidden;">
+                            <div id="model-download-bar" style="width: 0%; height: 100%; background: #4CAF50; transition: width 0.3s ease;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-section">
                 <div class="settings-title">Colors</div>
                 <div class="setting-row">
                     <span class="setting-label">Highlight</span>
@@ -574,6 +648,13 @@ The prompter will track your speech and scroll automatically."></textarea>
         <div id="transcript"></div>
     </div>
 
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-text">Loading transcription model...</div>
+        <div class="loading-model" id="loading-model-name"></div>
+    </div>
+
     <script>
         let ws = null;
         let totalWords = 0;  // Set by server
@@ -584,6 +665,9 @@ The prompter will track your speech and scroll automatically."></textarea>
         let isRecordingTranscript = false;  // Transcript recording state
         let audioDevices = [];  // Available audio devices
         let currentAudioDevice = null;  // Currently selected audio device index
+        let transcriptionModels = [];  // Available transcription models
+        let currentTranscriptionConfig = null;  // Current transcription configuration
+        let waitingForModelLoad = false;  // Track if we're waiting for model to load
 
         // Connect WebSocket
         function connect() {
@@ -617,14 +701,21 @@ The prompter will track your speech and scroll automatically."></textarea>
                     currentAudioDevice = data.audioDevice;
                     // Fetch and populate audio devices
                     fetchAudioDevices();
+                    // Store transcription config and fetch models
+                    currentTranscriptionConfig = data.transcriptionConfig;
+                    if (currentTranscriptionConfig) {
+                        document.getElementById('transcription-provider-select').value = currentTranscriptionConfig.provider;
+                    }
+                    fetchTranscriptionModels();
                     break;
 
                 case 'script_updated':
                     document.getElementById('script-input').value = data.script;
                     scriptHtml = data.scriptHtml || '';
                     totalWords = data.totalWords || 0;
-                    // If we were waiting to start the prompter, do it now
-                    if (waitingForScript) {
+                    // If we were waiting to start the prompter, activate it now
+                    // (unless we're waiting for the model to load)
+                    if (waitingForScript && !waitingForModelLoad) {
                         waitingForScript = false;
                         activatePrompterMode();
                     }
@@ -676,6 +767,41 @@ The prompter will track your speech and scroll automatically."></textarea>
                         }
                         setTimeout(() => { statusEl.textContent = ''; }, 5000);
                     }
+                    break;
+
+                case 'transcription_models':
+                    transcriptionModels = data.models || [];
+                    const provider = document.getElementById('transcription-provider-select').value;
+                    populateTranscriptionModels(provider);
+                    break;
+
+                case 'transcription_config_updated': {
+                        const statusEl = document.getElementById('transcription-status');
+                        if (data.success) {
+                            statusEl.textContent = data.message || 'Settings saved. Stop and start prompting to apply.';
+                            statusEl.style.color = '#4CAF50';
+                        } else {
+                            statusEl.textContent = data.error || 'Failed to save settings';
+                            statusEl.style.color = '#f44336';
+                        }
+                        setTimeout(() => { statusEl.textContent = ''; }, 5000);
+                    }
+                    break;
+
+                case 'model_download_status':
+                    handleModelDownloadStatus(data);
+                    break;
+
+                case 'model_download_progress':
+                    handleModelDownloadProgress(data);
+                    break;
+
+                case 'model_download_complete':
+                    handleModelDownloadComplete(data);
+                    break;
+
+                case 'model_loading_status':
+                    handleModelLoadingStatus(data);
                     break;
             }
         }
@@ -764,10 +890,15 @@ The prompter will track your speech and scroll automatically."></textarea>
             settings = getSettings();
             waitingForScript = true;
 
-            // Include transcript preference with the script
+            // Get transcript preference
             const saveTranscript = document.getElementById('setting-saveTranscript').checked;
-            ws.send(JSON.stringify({ type: 'script', text: script, saveTranscript: saveTranscript }));
+
+            // Send script to load it (without saveTranscript, as we'll send start_prompting separately)
+            ws.send(JSON.stringify({ type: 'script', text: script }));
             ws.send(JSON.stringify({ type: 'settings', settings: settings }));
+
+            // Send start_prompting to initialize audio and transcriber
+            ws.send(JSON.stringify({ type: 'start_prompting', saveTranscript: saveTranscript }));
         }
 
         function activatePrompterMode() {
@@ -784,6 +915,11 @@ The prompter will track your speech and scroll automatically."></textarea>
         }
 
         function exitPrompter() {
+            // Send stop_prompting to cleanup audio and transcriber
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'stop_prompting' }));
+            }
+
             document.getElementById('editor-container').classList.remove('hidden');
             document.getElementById('prompter-container').classList.remove('active');
         }
@@ -990,10 +1126,200 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
         });
 
+        // Fetch transcription models from backend
+        function fetchTranscriptionModels() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'get_transcription_models' }));
+            }
+        }
+
+        // Populate transcription model dropdown based on selected provider
+        function populateTranscriptionModels(provider) {
+            const select = document.getElementById('transcription-model-select');
+            select.innerHTML = '';
+
+            const filtered = transcriptionModels.filter(m => m.provider === provider);
+            if (filtered.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No models available';
+                select.appendChild(option);
+                return;
+            }
+
+            filtered.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = `${model.name} (${model.sizeMb}MB)`;
+                select.appendChild(option);
+            });
+
+            // Select current model if available
+            if (currentTranscriptionConfig && currentTranscriptionConfig.provider === provider) {
+                select.value = currentTranscriptionConfig.model_id;
+            } else if (filtered.length > 0) {
+                select.value = filtered[0].id;
+            }
+        }
+
+        // Transcription provider selection handler
+        document.getElementById('transcription-provider-select').addEventListener('change', (e) => {
+            populateTranscriptionModels(e.target.value);
+        });
+
+        // Transcription model selection handler
+        document.getElementById('transcription-model-select').addEventListener('change', (e) => {
+            const provider = document.getElementById('transcription-provider-select').value;
+            const modelId = e.target.value;
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                // First check if model is downloaded
+                ws.send(JSON.stringify({
+                    type: 'check_model_downloaded',
+                    provider: provider,
+                    modelId: modelId
+                }));
+            }
+        });
+
+        // Handle model download status check
+        function handleModelDownloadStatus(data) {
+            const provider = data.provider;
+            const modelId = data.modelId;
+            const downloaded = data.downloaded;
+
+            if (downloaded) {
+                // Model is already downloaded, just save the config
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'set_transcription_config',
+                        provider: provider,
+                        modelId: modelId
+                    }));
+                }
+            } else {
+                // Model not downloaded, start download automatically
+                const statusEl = document.getElementById('transcription-status');
+                statusEl.textContent = 'Model not downloaded. Starting download...';
+                statusEl.style.color = '#FFA500';
+
+                // Start download
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'download_model',
+                        provider: provider,
+                        modelId: modelId
+                    }));
+                }
+
+                // Show progress bar
+                showModelDownloadProgress();
+            }
+        }
+
+        // Handle model download progress updates
+        function handleModelDownloadProgress(data) {
+            const stage = data.stage;
+            const percent = data.percent;
+
+            // Update progress bar
+            const progressContainer = document.getElementById('model-download-progress');
+            const stageEl = document.getElementById('model-download-stage');
+            const percentEl = document.getElementById('model-download-percent');
+            const barEl = document.getElementById('model-download-bar');
+
+            progressContainer.style.display = 'block';
+
+            // Update stage text
+            const stageText = {
+                'starting': 'Starting download...',
+                'downloading': 'Downloading model...',
+                'extracting': 'Extracting files...',
+                'complete': 'Complete'
+            };
+            stageEl.textContent = stageText[stage] || stage;
+            percentEl.textContent = percent + '%';
+            barEl.style.width = percent + '%';
+        }
+
+        // Handle model download completion
+        function handleModelDownloadComplete(data) {
+            const statusEl = document.getElementById('transcription-status');
+
+            if (data.success) {
+                statusEl.textContent = data.message || 'Model downloaded. Restart prompter to use it.';
+                statusEl.style.color = '#4CAF50';
+
+                // Hide progress bar after a delay
+                setTimeout(() => {
+                    hideModelDownloadProgress();
+                }, 2000);
+
+                // Save the config now that model is downloaded
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'set_transcription_config',
+                        provider: data.provider,
+                        modelId: data.modelId
+                    }));
+                }
+            } else {
+                statusEl.textContent = 'Download failed: ' + (data.error || 'Unknown error');
+                statusEl.style.color = '#f44336';
+                hideModelDownloadProgress();
+            }
+
+            setTimeout(() => {
+                if (statusEl.textContent.includes('Restart prompter')) {
+                    statusEl.textContent = '';
+                }
+            }, 10000);
+        }
+
+        // Show model download progress bar
+        function showModelDownloadProgress() {
+            const progressContainer = document.getElementById('model-download-progress');
+            progressContainer.style.display = 'block';
+            document.getElementById('model-download-stage').textContent = 'Starting...';
+            document.getElementById('model-download-percent').textContent = '0%';
+            document.getElementById('model-download-bar').style.width = '0%';
+        }
+
+        // Hide model download progress bar
+        function hideModelDownloadProgress() {
+            const progressContainer = document.getElementById('model-download-progress');
+            progressContainer.style.display = 'none';
+        }
+
+        // Handle model loading status
+        function handleModelLoadingStatus(data) {
+            const overlay = document.getElementById('loading-overlay');
+            const modelNameEl = document.getElementById('loading-model-name');
+
+            if (data.status === 'loading') {
+                // Show loading spinner
+                waitingForModelLoad = true;
+                modelNameEl.textContent = `${data.provider}: ${data.modelId}`;
+                overlay.classList.add('visible');
+            } else if (data.status === 'ready') {
+                // Hide loading spinner and activate prompter
+                waitingForModelLoad = false;
+                overlay.classList.remove('visible');
+                // Now that model is ready, activate the prompter if we were waiting
+                if (waitingForScript) {
+                    waitingForScript = false;
+                    activatePrompterMode();
+                }
+            }
+        }
+
         // Settings change handlers
         document.querySelectorAll('#settings-panel input, #settings-panel select').forEach(el => {
-            // Skip the transcript checkbox and audio device select - they have their own handlers
-            if (el.id === 'setting-saveTranscript' || el.id === 'audio-device-select') return;
+            // Skip elements with their own handlers
+            if (el.id === 'setting-saveTranscript' ||
+                el.id === 'audio-device-select' ||
+                el.id === 'transcription-provider-select' ||
+                el.id === 'transcription-model-select') return;
 
             el.addEventListener('change', () => {
                 const newSettings = getSettings();

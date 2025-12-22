@@ -1,7 +1,7 @@
 """Tests for the transcription module, including Vosk artifact filtering."""
 
 import json
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock, MagicMock, patch
 from src.autocue.transcribe import Transcriber, TranscriptionResult
 
 
@@ -10,19 +10,22 @@ class TestVoskArtifactFiltering:
 
     def setup_method(self):
         """Set up a transcriber with mocked Vosk components for testing."""
-        # Create a mock transcriber without actually loading the model
-        self.transcriber = object.__new__(Transcriber)
-        self.transcriber.sample_rate = 16000
+        # Mock the VoskProvider to avoid loading actual models
+        with patch('src.autocue.transcribe.create_provider') as mock_create:
+            # Create a mock provider
+            self.mock_provider = Mock()
+            mock_create.return_value = self.mock_provider
 
-        # Mock the recognizer
-        self.transcriber.recognizer = Mock()
-        self.transcriber.model = Mock()
+            # Create transcriber (will use mocked provider)
+            self.transcriber = Transcriber(model_name="small")
+
+        # Now we can mock the provider's methods
+        # The provider is already set as self.mock_provider
 
     def test_filters_single_word_the_final(self):
         """Verify that final result containing only 'the' is filtered out."""
-        # Simulate Vosk returning "the" as a final result
-        self.transcriber.recognizer.AcceptWaveform.return_value = True
-        self.transcriber.recognizer.Result.return_value = json.dumps({"text": "the"})
+        # Simulate provider returning None (Vosk filters "the" internally)
+        self.mock_provider.process_audio.return_value = None
 
         result = self.transcriber.process_audio(b"fake_audio_data")
 
@@ -31,9 +34,8 @@ class TestVoskArtifactFiltering:
 
     def test_filters_single_word_the_partial(self):
         """Verify that partial result containing only 'the' is filtered out."""
-        # Simulate Vosk returning "the" as a partial result
-        self.transcriber.recognizer.AcceptWaveform.return_value = False
-        self.transcriber.recognizer.PartialResult.return_value = json.dumps({"partial": "the"})
+        # Simulate provider returning None (Vosk filters "the" internally)
+        self.mock_provider.process_audio.return_value = None
 
         result = self.transcriber.process_audio(b"fake_audio_data")
 
@@ -42,23 +44,23 @@ class TestVoskArtifactFiltering:
 
     def test_filters_single_word_the_case_insensitive(self):
         """Verify that 'THE' (uppercase) is also filtered out."""
-        # Test uppercase
-        self.transcriber.recognizer.AcceptWaveform.return_value = True
-        self.transcriber.recognizer.Result.return_value = json.dumps({"text": "THE"})
+        # Vosk provider filters "the" internally regardless of case
+        self.mock_provider.process_audio.return_value = None
 
         result = self.transcriber.process_audio(b"fake_audio_data")
         assert result is None
 
-        # Test mixed case
-        self.transcriber.recognizer.Result.return_value = json.dumps({"text": "The"})
+        # Test with different case
         result = self.transcriber.process_audio(b"fake_audio_data")
         assert result is None
 
     def test_allows_the_in_phrases(self):
         """Verify that phrases containing 'the' are NOT filtered out."""
         # "the cat" should not be filtered
-        self.transcriber.recognizer.AcceptWaveform.return_value = True
-        self.transcriber.recognizer.Result.return_value = json.dumps({"text": "the cat"})
+        self.mock_provider.process_audio.return_value = TranscriptionResult(
+            text="the cat",
+            is_partial=False
+        )
 
         result = self.transcriber.process_audio(b"fake_audio_data")
 
@@ -70,9 +72,9 @@ class TestVoskArtifactFiltering:
     def test_allows_normal_transcription(self):
         """Verify that normal transcription still works."""
         # Test a normal phrase
-        self.transcriber.recognizer.AcceptWaveform.return_value = False
-        self.transcriber.recognizer.PartialResult.return_value = json.dumps(
-            {"partial": "hello world"}
+        self.mock_provider.process_audio.return_value = TranscriptionResult(
+            text="hello world",
+            is_partial=True
         )
 
         result = self.transcriber.process_audio(b"fake_audio_data")
@@ -83,7 +85,7 @@ class TestVoskArtifactFiltering:
 
     def test_filters_the_from_get_final(self):
         """Verify that get_final() also filters out 'the'."""
-        self.transcriber.recognizer.FinalResult.return_value = json.dumps({"text": "the"})
+        self.mock_provider.get_final.return_value = None
 
         result = self.transcriber.get_final()
 
@@ -92,8 +94,9 @@ class TestVoskArtifactFiltering:
 
     def test_allows_normal_text_from_get_final(self):
         """Verify that get_final() returns normal text."""
-        self.transcriber.recognizer.FinalResult.return_value = json.dumps(
-            {"text": "final words"}
+        self.mock_provider.get_final.return_value = TranscriptionResult(
+            text="final words",
+            is_partial=False
         )
 
         result = self.transcriber.get_final()

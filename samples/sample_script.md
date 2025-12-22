@@ -38,8 +38,8 @@ This is a subsection with a smaller header. You might use these to organise talk
 Sometimes you need to read out specific numbers or technical terms. For example:
 
 - The M3 processor has approximately 25 billion transistors
-- Clock speeds can reach up to 4.05 gigahertz
-- The memory bandwidth is around 100 gigabytes per second
+- Clock speeds can reach up to 4.05GHz
+- The memory bandwidth is around 100GBps
 
 These specific details can be tricky with speech recognition, so it's good to test how well the tracking handles them.
 

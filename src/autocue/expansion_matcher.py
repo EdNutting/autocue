@@ -158,6 +158,7 @@ class ExpansionMatcher:
         self.expansion_match_position = 0
 
     def clone(self) -> "ExpansionMatcher":
+        """Clone the expansion matcher state."""
         result = ExpansionMatcher(self.parsed_script)
         result.active_expansions = [xs.copy() for xs in self.active_expansions]
         result.expansion_match_position = self.expansion_match_position

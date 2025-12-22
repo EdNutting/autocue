@@ -208,12 +208,12 @@ class TestPreprocessTokenForPunctuation:
     def test_handles_empty_string(self) -> None:
         """Empty string should return empty list."""
         result: list[str] = preprocess_token_for_punctuation("")
-        assert result == []
+        assert not result
 
     def test_handles_whitespace_only(self) -> None:
         """Whitespace-only string should return empty list."""
         result: list[str] = preprocess_token_for_punctuation("   ")
-        assert result == []
+        assert not result
 
     def test_regular_word_unchanged(self) -> None:
         """Regular word should return as single-element list."""

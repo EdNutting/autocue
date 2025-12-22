@@ -1,9 +1,20 @@
-model: medium
+# Transcription settings
+transcription:
+  provider: vosk  # or "sherpa"
+  model_id: vosk-en-us-small  # See available models with: autocue --list-models
+  model_path: null  # Optional custom model path
+
+# Legacy settings (deprecated, will be migrated automatically)
+model: null
 model_path: null
+
+# Server settings
 host: 127.0.0.1
 port: 8000
 audio_device: null
 chunk_ms: 100
+
+# UI display settings
 display:
   fontSize: 60
   fontFamily: Georgia, serif

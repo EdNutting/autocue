@@ -3,10 +3,12 @@ Web server for the autocue interface.
 Serves the HTML UI and handles WebSocket connections for real-time updates.
 """
 
+import asyncio
 import contextlib
 import json
 import logging
 import re
+import time
 from collections.abc import Iterator
 from html.parser import HTMLParser
 from pathlib import Path
@@ -18,6 +20,7 @@ from aiohttp import web
 
 from . import debug_log
 from .config import DEFAULT_CONFIG, DisplaySettings, load_config, save_config, update_config_display
+from .providers import download_model_with_progress, get_all_available_models, is_model_downloaded
 from .script_parser import ParsedScript, RawToken, parse_script
 
 logger = logging.getLogger(__name__)
@@ -189,6 +192,10 @@ class WebServer:
         self.transcript_toggle_requested: bool | None = None
         # Start transcript when script loads
         self.start_transcript_on_script: bool = False
+        # Prompting state control
+        self.start_prompting_requested: bool = False
+        self.stop_prompting_requested: bool = False
+        self.is_prompting: bool = False
 
         # Merge initial settings with defaults
         self.settings = DEFAULT_CONFIG["display"].copy()
@@ -237,7 +244,6 @@ class WebServer:
 
     async def _handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connections for real-time updates."""
-        import time
         start_time = time.time()
         print(f"[WS] Connection attempt received at {start_time}")
 
@@ -260,7 +266,8 @@ class WebServer:
                 "totalWords": self.total_words,
                 "settings": self.settings,
                 "samples": self._get_sample_scripts(),
-                "audioDevice": config.get("audio_device")
+                "audioDevice": config.get("audio_device"),
+                "transcriptionConfig": config.get("transcription", DEFAULT_CONFIG["transcription"])
             })
 
             async for msg in ws:
@@ -292,6 +299,12 @@ class WebServer:
             "load_sample": self._on_load_sample_message,
             "toggle_transcript": self._on_toggle_transcript_message,
             "set_audio_device": self._on_set_audio_device_message,
+            "get_transcription_models": self._on_get_transcription_models,
+            "set_transcription_config": self._on_set_transcription_config,
+            "check_model_downloaded": self._on_check_model_downloaded,
+            "download_model": self._on_download_model,
+            "start_prompting": self._on_start_prompting_message,
+            "stop_prompting": self._on_stop_prompting_message,
         }
 
         handler: object | None = handlers.get(
@@ -436,6 +449,205 @@ class WebServer:
                 "error": str(e)
             })
 
+    async def _on_get_transcription_models(
+        self,
+        ws: web.WebSocketResponse,
+        _data: dict[str, object]
+    ) -> None:
+        """Handle get transcription models message."""
+        try:
+            models = get_all_available_models()
+            await ws.send_json({
+                "type": "transcription_models",
+                "models": [
+                    {
+                        "id": m.id,
+                        "name": m.name,
+                        "provider": m.provider,
+                        "sizeMb": m.size_mb,
+                        "description": m.description,
+                    }
+                    for m in models
+                ]
+            })
+        except Exception as e:
+            logger.error("Error getting transcription models: %s", e)
+            await ws.send_json({
+                "type": "transcription_models",
+                "models": [],
+                "error": str(e)
+            })
+
+    async def _on_set_transcription_config(
+        self,
+        ws: web.WebSocketResponse,
+        data: dict[str, object]
+    ) -> None:
+        """Handle set transcription config message."""
+        provider: str = str(data.get("provider", "vosk"))
+        model_id: str = str(data.get("modelId", "vosk-en-us-small"))
+
+        try:
+            config = load_config()
+            config["transcription"]["provider"] = provider
+            config["transcription"]["model_id"] = model_id
+            config["transcription"]["model_path"] = None
+
+            if save_config(config):
+                await ws.send_json({
+                    "type": "transcription_config_updated",
+                    "success": True,
+                    "message": "Settings saved. Stop and start prompting to apply changes."
+                })
+                # Broadcast to all clients
+                await self.broadcast({
+                    "type": "transcription_config_updated",
+                    "success": True,
+                    "message": "Settings saved. Stop and start prompting to apply changes."
+                })
+            else:
+                await ws.send_json({
+                    "type": "transcription_config_updated",
+                    "success": False,
+                    "error": "Failed to save config"
+                })
+        except Exception as e:
+            logger.error("Error setting transcription config: %s", e)
+            await ws.send_json({
+                "type": "transcription_config_updated",
+                "success": False,
+                "error": str(e)
+            })
+
+    async def _on_check_model_downloaded(
+        self,
+        ws: web.WebSocketResponse,
+        data: dict[str, object]
+    ) -> None:
+        """Handle check model downloaded message."""
+        provider: str = str(data.get("provider", "vosk"))
+        model_id: str = str(data.get("modelId", ""))
+
+        try:
+            downloaded = is_model_downloaded(provider, model_id)
+            await ws.send_json({
+                "type": "model_download_status",
+                "provider": provider,
+                "modelId": model_id,
+                "downloaded": downloaded
+            })
+        except Exception as e:
+            logger.error("Error checking model download status: %s", e)
+            await ws.send_json({
+                "type": "model_download_status",
+                "provider": provider,
+                "modelId": model_id,
+                "downloaded": False,
+                "error": str(e)
+            })
+
+    async def _on_download_model(
+        self,
+        ws: web.WebSocketResponse,
+        data: dict[str, object]
+    ) -> None:
+        """Handle download model message with progress updates."""
+        provider: str = str(data.get("provider", "vosk"))
+        model_id: str = str(data.get("modelId", ""))
+
+        try:
+            # Send initial starting message
+            await ws.send_json({
+                "type": "model_download_progress",
+                "provider": provider,
+                "modelId": model_id,
+                "stage": "starting",
+                "percent": 0
+            })
+
+            # Create progress callback that sends updates via WebSocket
+            async def progress_callback(stage: str, percent: int) -> None:
+                await ws.send_json({
+                    "type": "model_download_progress",
+                    "provider": provider,
+                    "modelId": model_id,
+                    "stage": stage,
+                    "percent": percent
+                })
+
+            # Run download in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+
+            def sync_progress_callback(stage: str, percent: int) -> None:
+                # Schedule the async callback in the event loop
+                asyncio.run_coroutine_threadsafe(
+                    progress_callback(stage, percent), loop
+                )
+
+            model_path = await loop.run_in_executor(
+                None,
+                lambda: download_model_with_progress(
+                    provider, model_id, sync_progress_callback
+                )
+            )
+
+            # Send completion message
+            await ws.send_json({
+                "type": "model_download_complete",
+                "provider": provider,
+                "modelId": model_id,
+                "success": True,
+                "path": model_path,
+                "message": "Model downloaded successfully. Start prompting to use it."
+            })
+            # Broadcast to all clients
+            await self.broadcast({
+                "type": "model_download_complete",
+                "provider": provider,
+                "modelId": model_id,
+                "success": True,
+                "message": "Model downloaded successfully. Start prompting to use it."
+            })
+        except Exception as e:
+            logger.error("Error downloading model: %s", e)
+            await ws.send_json({
+                "type": "model_download_complete",
+                "provider": provider,
+                "modelId": model_id,
+                "success": False,
+                "error": str(e)
+            })
+            # Broadcast to all clients
+            await self.broadcast({
+                "type": "model_download_complete",
+                "provider": provider,
+                "modelId": model_id,
+                "success": False,
+                "error": str(e)
+            })
+
+    async def _on_start_prompting_message(
+        self,
+        ws: web.WebSocketResponse,
+        data: dict[str, object]
+    ) -> None:
+        """Handle start prompting message."""
+        self.start_prompting_requested = True
+        self.is_prompting = True
+        # Include transcript preference
+        self.start_transcript_on_script = bool(data.get("saveTranscript", False))
+        logger.info("Start prompting requested")
+
+    async def _on_stop_prompting_message(
+        self,
+        _ws: web.WebSocketResponse,
+        _data: dict[str, object]
+    ) -> None:
+        """Handle stop prompting message."""
+        self.stop_prompting_requested = True
+        self.is_prompting = False
+        logger.info("Stop prompting requested")
+
     async def _render_and_broadcast_script(self) -> None:
         """Render script to HTML and broadcast to all clients."""
         self.script_html, self.total_words, self.parsed_script = render_script_with_word_indices(
@@ -542,6 +754,21 @@ class WebServer:
             "file": str(file) if file else None
         })
 
+    async def send_model_loading_status(self, status: str, provider: str, model_id: str) -> None:
+        """Send model loading status to all clients.
+
+        Args:
+            status: Either 'loading' or 'ready'
+            provider: The transcription provider (e.g., 'vosk', 'sherpa')
+            model_id: The model identifier
+        """
+        await self.broadcast({
+            "type": "model_loading_status",
+            "status": status,
+            "provider": provider,
+            "modelId": model_id
+        })
+
     async def send_position(
         self,
         word_index: int,
@@ -570,8 +797,6 @@ class WebServer:
 
     async def start(self) -> None:
         """Start the web server."""
-        import asyncio
-        import time
         start_time = time.time()
         print(f"[SERVER] Starting web server setup at {start_time}")
 

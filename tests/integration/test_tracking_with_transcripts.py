@@ -234,7 +234,8 @@ class TestTranscriptTracking:
             last_position = current_position
 
         # Large forward jumps should be rare
-        # We allow some due to word skipping (speaker skips a word) and embedded punctuation splitting
+        # We allow some due to word skipping (speaker skips a word) and embedded
+        # punctuation splitting
         assert largest_forward_jump <= 6, \
             f"Largest forward jump was {largest_forward_jump} words, expected <= 6"
         # Most updates should advance by 0-2 words

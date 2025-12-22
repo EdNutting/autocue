@@ -33,23 +33,44 @@ class TrackingSettings(TypedDict):
     max_jump_distance: int
 
 
+class TranscriptionConfig(TypedDict):
+    """Type definition for transcription configuration settings."""
+    provider: str  # "vosk" or "sherpa"
+    model_id: str  # Model identifier (e.g., "vosk-en-us-small")
+    model_path: str | None  # Optional custom path
+
+
 class Config(TypedDict):
     """Type definition for the complete configuration."""
-    model: str
+    # Transcription settings (new)
+    transcription: TranscriptionConfig
+    # Legacy settings (deprecated but kept for backward compatibility)
+    model: str | None
     model_path: str | None
+    # Server settings
     host: str
     port: int
     audio_device: int | None
     chunk_ms: int
+    # UI settings
     display: DisplaySettings
     tracking: TrackingSettings
 
 
 # Default configuration values
 DEFAULT_CONFIG: Config = {
-    # CLI defaults
-    "model": "small",
+    # Transcription settings (new)
+    "transcription": {
+        "provider": "vosk",
+        "model_id": "vosk-en-us-small",
+        "model_path": None,
+    },
+
+    # Legacy settings (deprecated but kept for backward compatibility)
+    "model": None,
     "model_path": None,
+
+    # Server settings
     "host": "127.0.0.1",
     "port": 8000,
     "audio_device": None,
@@ -106,9 +127,64 @@ def _deep_merge(base, override):
     return result
 
 
+def migrate_config(config: dict[str, Any]) -> dict[str, Any]:
+    """
+    Migrate old configuration format to new format.
+
+    Automatically converts old 'model' and 'model_path' fields to new
+    'transcription' structure.
+
+    Args:
+        config: Configuration dictionary (may be in old or new format)
+
+    Returns:
+        Migrated configuration dictionary
+    """
+    # Check if already using new format
+    if "transcription" in config:
+        return config
+
+    # Check if old format exists
+    if "model" in config or "model_path" in config:
+        old_model = config.get("model", "small")
+        old_path = config.get("model_path")
+
+        if old_path:
+            # Custom path provided
+            config["transcription"] = {
+                "provider": "vosk",
+                "model_id": "custom",
+                "model_path": old_path,
+            }
+        elif old_model:
+            # Model name provided - convert to new model_id format
+            config["transcription"] = {
+                "provider": "vosk",
+                "model_id": f"vosk-en-us-{old_model}",
+                "model_path": None,
+            }
+        else:
+            # Use default
+            config["transcription"] = DEFAULT_CONFIG["transcription"].copy()
+
+        # Clear old fields (but keep them for backward compat in config dict)
+        config["model"] = None
+        config["model_path"] = None
+
+        print(
+            f"Note: Migrated old config format to new transcription format "
+            f"(provider={config['transcription']['provider']}, "
+            f"model_id={config['transcription']['model_id']})"
+        )
+
+    return config
+
+
 def load_config(config_path: Path | None = None) -> Config:
     """
     Load configuration from file, merged with defaults.
+
+    Automatically migrates old configuration format to new format.
 
     Args:
         config_path: Optional path to config file. If None, uses default location.
@@ -131,6 +207,9 @@ def load_config(config_path: Path | None = None) -> Config:
                     config = _deep_merge(config, file_config)
         except (OSError, yaml.YAMLError) as e:
             print(f"Warning: Could not load config from {config_path}: {e}")
+
+    # Migrate old config format if necessary
+    config = migrate_config(config)
 
     return config  # type: ignore[return-value]
 
@@ -182,6 +261,21 @@ def get_tracking_settings(config: Config) -> TrackingSettings:
         Tracking settings dictionary.
     """
     return config.get("tracking", DEFAULT_CONFIG["tracking"]).copy()  # type: ignore[return-value]
+
+
+def get_transcription_settings(config: Config) -> TranscriptionConfig:
+    """
+    Extract transcription settings from config.
+
+    Args:
+        config: Configuration dictionary.
+
+    Returns:
+        Transcription settings dictionary.
+    """
+    return config.get("transcription",
+                      DEFAULT_CONFIG["transcription"]
+                      ).copy()  # type: ignore[return-value]
 
 
 def update_config_display(config: Config, display_settings: DisplaySettings) -> Config:

@@ -183,7 +183,9 @@ class TestEmbeddedPunctuationParsing:
 
         # Verify RawToken.index matches array position
         for i, raw_token in enumerate(parsed.raw_tokens):
-            assert raw_token.index == i, f"raw_tokens[{i}].index should be {i}, got {raw_token.index}"
+            assert raw_token.index == i, (
+                f"raw_tokens[{i}].index should be {i}, got {raw_token.index}"
+            )
 
         # But speakable words are split for speech matching
         # 2^3 becomes 3 speakable words: 2, ^, 3
@@ -223,7 +225,8 @@ class TestEmbeddedPunctuationParsing:
         # Find the speakable words from raw token 0 ("2^3")
         # Should have 3 expansion words: one for "2", one for "^", one for "3"
         speakable_indices = parsed.raw_to_speakable[0]
-        expansion_words = [parsed.speakable_words[idx] for idx in speakable_indices if parsed.speakable_words[idx].is_expansion]
+        expansion_words = [parsed.speakable_words[idx]
+                           for idx in speakable_indices if parsed.speakable_words[idx].is_expansion]
 
         # Should have 2 expansion words: "2" and "^" (both are expansions)
         # "3" is also an expansion, so 3 total
@@ -238,7 +241,10 @@ class TestEmbeddedPunctuationParsing:
                     caret_word = sw
                     break
 
-        assert caret_word is not None, f"Could not find caret expansion. Expansions: {[sw.all_expansions for sw in expansion_words]}"
+        assert caret_word is not None, (
+            "Could not find caret expansion. Expansions: "
+            f"{[sw.all_expansions for sw in expansion_words]}"
+        )
         assert caret_word.is_expansion is True
 
     def test_exponentiation_variable(self) -> None:
