@@ -423,6 +423,27 @@
             animation: pulse 1s infinite;
         }
 
+        /* Fullscreen button */
+        #fullscreen-btn {
+            position: fixed;
+            top: 20px;
+            left: 200px;
+            font-family: "Inter", sans-serif;
+            font-size: 12px;
+            padding: 8px 14px;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            border-radius: 20px;
+            color: #888;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        #fullscreen-btn:hover {
+            background: rgba(255,255,255,0.2);
+            color: #fff;
+        }
+
         /* Transcript display */
         #transcript {
             position: fixed;
@@ -623,6 +644,10 @@ The prompter will track your speech and scroll automatically."></textarea>
                     <span class="setting-label" style="color: #666;">R</span>
                     <span class="setting-label">Reset to start</span>
                 </div>
+                <div class="setting-row">
+                    <span class="setting-label" style="color: #666;">F</span>
+                    <span class="setting-label">Toggle fullscreen</span>
+                </div>
             </div>
 
             <div class="settings-section">
@@ -645,6 +670,7 @@ The prompter will track your speech and scroll automatically."></textarea>
             <span class="record-dot"></span>
             <span id="transcript-btn-text">Transcribe</span>
         </button>
+        <button id="fullscreen-btn" onclick="toggleFullscreen()">Fullscreen</button>
         <div id="transcript"></div>
     </div>
 
@@ -832,6 +858,45 @@ The prompter will track your speech and scroll automatically."></textarea>
                     type: 'toggle_transcript',
                     enable: !isRecordingTranscript
                 }));
+            }
+        }
+
+        function toggleFullscreen() {
+            const prompter = document.getElementById('prompter-container');
+            const btn = document.getElementById('fullscreen-btn');
+
+            if (!document.fullscreenElement) {
+                // Enter fullscreen
+                if (prompter.requestFullscreen) {
+                    prompter.requestFullscreen();
+                } else if (prompter.webkitRequestFullscreen) {
+                    prompter.webkitRequestFullscreen();
+                } else if (prompter.msRequestFullscreen) {
+                    prompter.msRequestFullscreen();
+                }
+            } else {
+                // Exit fullscreen
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
+            }
+        }
+
+        // Update fullscreen button text when fullscreen state changes
+        document.addEventListener('fullscreenchange', updateFullscreenButton);
+        document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+        document.addEventListener('msfullscreenchange', updateFullscreenButton);
+
+        function updateFullscreenButton() {
+            const btn = document.getElementById('fullscreen-btn');
+            if (document.fullscreenElement) {
+                btn.textContent = 'Exit Fullscreen';
+            } else {
+                btn.textContent = 'Fullscreen';
             }
         }
 
@@ -1040,6 +1105,10 @@ The prompter will track your speech and scroll automatically."></textarea>
                 case 'R':
                     ws.send(JSON.stringify({ type: 'reset' }));
                     resetDisplay();
+                    break;
+                case 'f':
+                case 'F':
+                    toggleFullscreen();
                     break;
             }
         });
