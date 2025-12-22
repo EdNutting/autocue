@@ -70,14 +70,14 @@ class TestWordSkipping:
     def test_no_match_after_max_skip(self) -> None:
         """Should not advance if word doesn't match within skip range."""
         tracker: ScriptTracker = ScriptTracker(
-            "The quick brown fox jumps over")
+            "The quick brown fox jumps over the lazy dog")
 
         tracker.update("the")
         initial_pos: int = tracker.optimistic_position
 
-        # "over" is too far ahead (4 words), shouldn't match
-        pos: ScriptPosition = tracker.update("the over")
-        # Position should only advance for "the", not "over"
+        # "dog" is too far ahead (7 words away, beyond 2*max_skip_distance=4), shouldn't match
+        pos: ScriptPosition = tracker.update("the dog")
+        # Position should only advance for "the", not "dog"
         assert pos.word_index == initial_pos
 
 

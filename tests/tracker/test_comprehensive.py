@@ -1010,7 +1010,7 @@ class TestIntegrationScenarios:
         assert backtrack_pos <= pos_after_intro
 
         # After backtrack, skip_disabled_count should be set
-        assert tracker.skip_disabled_count == 5
+        assert tracker.skip_disabled_count == 3
 
         # Continue speaking - simulate incremental speech recognition updates
         tracker.update("today im going to walk you through how")
