@@ -21,6 +21,18 @@ scrutiny.
 rewriting the core tracking algorithms because it had become so messy and wasn't
 reliable, and Claude simply couldn't reason about this complex tracking task.)
 
+## Demo Videos
+
+See Autocue in action with these video demonstrations:
+
+**Sample Script** - A recording showing the autocue tracking while reading the "Sample Script", with Picture-in-Picture video and audio:
+
+[![Sample Script Demo](https://img.youtube.com/vi/juMx3NvDu8s/0.jpg)](https://youtu.be/juMx3NvDu8s)
+
+**Number Expansion Test Script** - A recording showing the autocue handling number expansion, with Picture-in-Picture video and audio:
+
+[![Number Expansion Test Script Demo](https://img.youtube.com/vi/Xs6Is0MsocE/0.jpg)](https://youtu.be/Xs6Is0MsocE)
+
 ## Platforms
 
 Primarily developed and tested on macOS (M3), but should work on Windows and
