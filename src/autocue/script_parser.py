@@ -26,7 +26,7 @@ PUNCTUATION_EXPANSIONS: dict[str, list[list[str]]] = {
     ">": [["greater", "than"]],
     "<=": [["less", "than", "or", "equal"]],
     ">=": [["greater", "than", "or", "equal"]],
-    "/": [["slash"], ["or"], ["forward", "slash"]],
+    "/": [["slash"], ["or"], ["forward", "slash"], ["divide"], ["divided", "by"], ["divides"], ["over"]],
     "\\": [["backslash"], ["back", "slash"]],
     "~": [["approximately"], ["tilde"], ["about"]],
     "@": [["at"]],
@@ -368,7 +368,8 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
             if expansion:
                 # Punctuation token - create ONE speakable word with all expansions
                 # Get all possible expansions for dynamic matching
-                all_exps: list[list[str]] | None = get_all_expansions(sub_token)
+                all_exps: list[list[str]
+                               ] | None = get_all_expansions(sub_token)
                 assert all_exps is not None
                 sw: SpeakableWord = SpeakableWord(
                     text="<expansion>",

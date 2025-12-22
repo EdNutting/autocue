@@ -28,9 +28,9 @@ Fractional exponents represent roots. So 9^0.5 equals the square root of 9, whic
 
 ### Scientific Notation
 
-Scientists and engineers use exponents constantly. A wavelength of light might be 5.5 x 10^-7 metres, or about 550nm in everyday terms.
+Scientists and engineers use exponents constantly. A wavelength of light might be 5.5 * 10^-7 metres, or about 550nm in everyday terms.
 
-The speed of light is approximately 3 x 10^8 m/s - that's 300,000,000 metres per second!
+The speed of light is approximately 3 * 10^8 m/s - that's 300,000,000 metres per second!
 
 Computer storage also uses powers of 2:
 
@@ -62,9 +62,9 @@ The relationship is: if b^y = x, then log_b(x) = y
 
 Here are the key properties:
 
-1. log(a x b) = log(a) + log(b)
+1. log(a * b) = log(a) + log(b)
 2. log(a / b) = log(a) - log(b)
-3. log(a^n) = n x log(a)
+3. log(a^n) = n * log(a)
 
 For example: log(1,000) = log(10^3) = 3
 
@@ -120,7 +120,7 @@ Try these yourself:
 
 2nd problem: What is log_2(256)? Since 2^8 = 256, the answer is 8.
 
-3rd problem: Simplify 10^3 x 10^4. Answer: 10^7 = 10,000,000.
+3rd problem: Simplify 10^3 * 10^4. Answer: 10^7 = 10,000,000.
 
 23rd problem in our series: If you have 50% annual growth, how many years to double? Using the rule of 72, it's approximately 72 / 50 ~ 1.44 years.
 
@@ -132,9 +132,9 @@ Today we covered:
 - Negative exponents: x^-n = 1 / x^n
 - Fractional exponents: x^0.5 = square root of x
 - Logarithms: the inverse of exponentiation
-- log(a x b) = log(a) + log(b)
+- log(a * b) = log(a) + log(b)
 - log(a / b) = log(a) - log(b)
-- log(a^n) = n x log(a)
+- log(a^n) = n * log(a)
 
 Thanks for watching! If this video helped you, please give it a thumbs up & consider subscribing. Drop a comment below if you have questions or want to see more topics like this.
 
