@@ -53,6 +53,7 @@ The experiment measured 0.33 seconds of delay over a 5m cable, achieving 99.7% a
 ## Final Summary
 
 This script has tested:
+
 - Integers like 100, 1000, 1100, 11,000, and 1,000,000
 - Decimals like 3.14, 0.5, 0.33, and 0.25
 - Ordinals like 1st, 2nd, 3rd, 23rd, and 101st
