@@ -6,7 +6,7 @@ speak—including detecting when you backtrack to restart a sentence.
 
 ## Note on AI-written code
 
-The code was written almost entirely by Claude, with me prompting it for
+The code was written with help from Claude, with me prompting it for
 improvements. While the implementation uses only local AI (speech recognition)
 to do transcription, AI-generated code comes with other risks. I make no
 promises about this code being production-worthy or safe. This is really just a
@@ -17,9 +17,14 @@ Use at your own risk / judgement.
 Contributions are welcome. Contributions written by AI will be subject to equal
 scrutiny.
 
+(After Claude had a first go at this autocue program, I ended up heavily
+rewriting the core tracking algorithms because it had become so messy and wasn't
+reliable, and Claude simply couldn't reason about this complex tracking task.)
+
 ## Platforms
 
-Primarily developed and tested on macOS (M3), but should work on Windows and Linux with appropriate audio dependencies installed.
+Primarily developed and tested on macOS (M3), but should work on Windows and
+Linux with appropriate audio dependencies installed.
 
 ## Features
 
