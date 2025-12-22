@@ -1,3 +1,7 @@
+# Copyright © 2025 Ed Nutting
+# SPDX-License-Identifier: MIT
+# See LICENSE file for details
+
 """Tests for tracker and transcriber reset behavior when prompting starts."""
 
 from unittest.mock import Mock, AsyncMock, patch

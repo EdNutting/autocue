@@ -1,3 +1,7 @@
+# Copyright © 2025 Ed Nutting
+# SPDX-License-Identifier: MIT
+# See LICENSE file for details
+
 """
 Configuration management for Autocue.
 Handles loading and saving settings from a YAML config file.

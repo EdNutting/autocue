@@ -1,3 +1,7 @@
+# Copyright © 2025 Ed Nutting
+# SPDX-License-Identifier: MIT
+# See LICENSE file for details
+
 """
 Web server for the autocue interface.
 Serves the HTML UI and handles WebSocket connections for real-time updates.

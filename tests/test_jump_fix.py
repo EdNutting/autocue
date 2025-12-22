@@ -1,3 +1,7 @@
+# Copyright © 2025 Ed Nutting
+# SPDX-License-Identifier: MIT
+# See LICENSE file for details
+
 """Test that demonstrates the jump-to fix for embedded punctuation."""
 
 import markdown

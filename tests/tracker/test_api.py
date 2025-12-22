@@ -1,3 +1,7 @@
+# Copyright © 2025 Ed Nutting
+# SPDX-License-Identifier: MIT
+# See LICENSE file for details
+
 """
 Tests for ScriptTracker API methods (reset, jump, extract, display).
 """

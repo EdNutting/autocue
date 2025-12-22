@@ -1,3 +1,7 @@
+# Copyright © 2025 Ed Nutting
+# SPDX-License-Identifier: MIT
+# See LICENSE file for details
+
 """Tests for verifying the tracking system follows transcripts smoothly.
 
 These tests use real transcript data to verify that the tracker:

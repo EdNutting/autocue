@@ -1,3 +1,7 @@
+# Copyright © 2025 Ed Nutting
+# SPDX-License-Identifier: MIT
+# See LICENSE file for details
+
 """
 Audio capture module using sounddevice for low-latency microphone input.
 Captures audio in small chunks and feeds them to the transcriber.

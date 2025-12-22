@@ -1,3 +1,7 @@
+# Copyright © 2025 Ed Nutting
+# SPDX-License-Identifier: MIT
+# See LICENSE file for details
+
 """
 Script tracking module that matches spoken words to script text.
 Uses fuzzy matching to handle speech recognition errors and

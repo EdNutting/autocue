@@ -1,3 +1,7 @@
+# Copyright © 2025 Ed Nutting
+# SPDX-License-Identifier: MIT
+# See LICENSE file for details
+
 """
 Script parsing module that handles three representations of script text:
 1. Raw tokens - tokens as they appear in rendered HTML (after Markdown processing)
