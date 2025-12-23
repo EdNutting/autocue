@@ -15,6 +15,7 @@ import markdown
 from rapidfuzz import fuzz
 
 from .expansion_matcher import ExpansionMatcher
+from .profiling import profile_function
 from .script_parser import (
     ParsedScript,
     get_speakable_word_list,
@@ -325,6 +326,7 @@ class ScriptTracker:
         """Check if a word is a common filler word that can be skipped."""
         return self._normalize_word(word) in self.FILLER_WORDS
 
+    @profile_function("tracker.update")
     def update(self, transcription: str, is_partial: bool = False) -> ScriptPosition:
         """
         Update position based on new transcription.
@@ -354,6 +356,7 @@ class ScriptTracker:
         else:
             return self._update_final(transcription)
 
+    @profile_function("tracker._update_partial")
     def _update_partial(self, transcription: str) -> ScriptPosition:
         """
         Update position based on partial transcription result.
@@ -424,6 +427,7 @@ class ScriptTracker:
 
         return self.current_position
 
+    @profile_function("tracker._update_final")
     def _update_final(self, transcription: str) -> ScriptPosition:
         """
         Update position based on final transcription result.
@@ -575,6 +579,7 @@ class ScriptTracker:
 
         return display_lines, current_in_display, word_offset
 
+    @profile_function("tracker._process_words")
     def _process_words(self, state: TrackingState, max_skip_distance: int, update_validation_counter: bool = True) -> None:
         """Process words in the queue against the script, updating the state.
 
@@ -634,6 +639,7 @@ class ScriptTracker:
                     if update_validation_counter and is_jump:
                         self.last_update_was_jump = True
 
+    @profile_function("tracker._match_single_word")
     def _match_single_word(self, spoken_word: str, state: TrackingState) -> SingleWordMatchResult:
         """
         Try to advance position based on new spoken words.
@@ -710,6 +716,7 @@ class ScriptTracker:
 
         return SingleWordMatchResult(False, False, False)
 
+    @profile_function("tracker._match_words_with_skipping")
     def _match_words_with_skipping(self, state: TrackingState, max_skip_distance: int) -> ManyWordMatchResult:
         def try_matching(variant_name: str, optimism_mode: int, tmp_optimistic_position: int):
             # Clone state to work on - only copy back if successful
@@ -831,6 +838,7 @@ class ScriptTracker:
 
         return ManyWordMatchResult(0, 0)
 
+    @profile_function("tracker._detect_jump_internal")
     def _detect_jump_internal(self, state: TrackingState) -> tuple[int, bool]:
         """
         Detect if the speaker has jumped to a different part of the script.
@@ -1006,6 +1014,7 @@ class ScriptTracker:
 
         return new_position, is_jump
 
+    @profile_function("tracker._find_best_match")
     def _find_best_match(self, spoken_words: str) -> tuple[int, float]:
         """
         Find the best matching position in the script for spoken words.

@@ -87,3 +87,7 @@ The system maintains three representations of the script text:
 3. **HTML rendering** - With word indices mapping back to raw tokens
 
 This ensures the speech tracker and UI highlighting stay in sync.
+
+## Use agents
+
+You should use parallel agents (/subagents) when appropriate, to complete independent tasks more quickly.
