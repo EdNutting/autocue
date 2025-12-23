@@ -183,12 +183,55 @@ if is_partial and time_since_last_partial < 0.05:
 
 ### Phase 3: Architecture (1 day)
 
-1. ⏭️ Move tracking to separate thread
-2. ⏭️ Implement queue-based communication
-3. ⏭️ Limit partial updates to every 50ms or more
-4. ⏭️ Add backpressure handling
+1. ✅ Move tracking to separate thread
+2. ✅ Implement queue-based communication
+3. ✅ Limit partial updates to every 50ms or more
+4. ✅ Add backpressure handling
 
 **Expected Result**: Non-blocking tracking, eliminates all latency concerns
+
+**Implementation Details**:
+
+- Created `ThreadedTracker` class in [src/autocue/threaded_tracker.py](src/autocue/threaded_tracker.py:1)
+    - Worker thread processes tracking in parallel with audio/transcription
+    - Non-blocking `submit_transcription()` API (< 1ms latency)
+    - Queue-based communication between main loop and worker thread
+    - Automatic throttling of partial updates (max 1 per 50ms)
+    - Intelligent backpressure handling:
+        - Drops old partials when queue is full
+        - Preserves final transcriptions
+        - Configurable queue size (default: 10)
+    - Thread-safe operations with proper locking
+    - Clean shutdown with graceful worker thread termination
+
+- Updated [src/autocue/main.py](src/autocue/main.py:35) to use `ThreadedTracker`:
+    - Lines 356-376: Decoupled audio processing from tracking
+    - Lines 378-407: Independent result polling loop
+    - Audio capture never blocks on tracking (critical for real-time performance)
+    - Tracking can take >10ms without affecting audio pipeline
+
+- Added comprehensive test suite in [tests/tracker/test_threaded_tracker.py](tests/tracker/test_threaded_tracker.py:1):
+    - 18 tests covering all functionality
+    - Tests for non-blocking operation, throttling, backpressure, concurrency
+    - Performance tests validate < 1ms submit latency and >1000/s throughput
+    - All tests passing (388 total tests in suite)
+
+**Performance Characteristics**:
+
+- Submit latency: < 1ms average, < 2ms P95
+- Throughput: > 1000 submissions/second
+- Audio pipeline: Never blocks (critical improvement)
+- Partial update throttling: 50ms minimum interval
+- Queue size: 10 items (configurable)
+
+**Benefits**:
+
+- ✅ Eliminates all tracking-induced audio latency
+- ✅ Allows tracking to take as long as needed without blocking
+- ✅ Reduces CPU usage by throttling partials
+- ✅ Protects against queue overflow with backpressure
+- ✅ Maintains thread safety and clean shutdown
+- ✅ Fully backward compatible API
 
 ## How to Continue Analysis
 

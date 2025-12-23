@@ -32,7 +32,7 @@ from .config import (
 )
 from .providers import get_all_available_models
 from .server import WebServer
-from .tracker import ScriptTracker
+from .threaded_tracker import ThreadedTracker
 from .transcribe import Transcriber, download_model
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ class AutocueApp:
 
         self.audio: AudioCapture | None = None
         self.transcriber: Transcriber | None = None
-        self.tracker: ScriptTracker | None = None
+        self.tracker: ThreadedTracker | None = None
         self.server: WebServer | None = None
         self.transcript_file: Path | None = None
 
@@ -274,7 +274,11 @@ class AutocueApp:
             # Check if script has changed
             if self.server.script_text and self.server.script_text != current_script:
                 current_script = self.server.script_text
-                self.tracker = ScriptTracker(
+                # Shutdown old tracker if exists
+                if self.tracker:
+                    self.tracker.shutdown()
+                # Create new threaded tracker
+                self.tracker = ThreadedTracker(
                     current_script,
                     window_size=self.tracking_settings.get("window_size", 8),
                     match_threshold=self.tracking_settings.get(
@@ -282,7 +286,9 @@ class AutocueApp:
                     jump_threshold=self.tracking_settings.get(
                         "backtrack_threshold", 3),
                     max_jump_distance=self.tracking_settings.get(
-                        "max_jump_distance", 50)
+                        "max_jump_distance", 50),
+                    partial_throttle_ms=50,  # Phase 3: 50ms throttle
+                    max_queue_size=10  # Phase 3: backpressure limit
                 )
                 print(f"Script loaded: {len(self.tracker.words)} words")
                 print(
@@ -347,12 +353,12 @@ class AutocueApp:
                     await self.stop_transcript()
 
             # Process audio - only if audio and transcriber are initialized
-            if self.audio and self.transcriber:
+            if self.audio and self.transcriber and self.tracker:
                 loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
                 audio_chunk: bytes | None = await loop.run_in_executor(
                     None, self.audio.get_chunk, 0.05
                 )
-                if audio_chunk and self.tracker:
+                if audio_chunk:
                     # Run blocking Vosk transcription in thread pool
                     result = await loop.run_in_executor(
                         None, self.transcriber.process_audio, audio_chunk
@@ -362,40 +368,43 @@ class AutocueApp:
                         # Save transcript if enabled
                         self.write_transcript(result.text, result.is_partial)
 
-                        position = self.tracker.update(
+                        # Submit transcription to tracker (non-blocking)
+                        # Phase 3: This no longer blocks!
+                        self.tracker.submit_transcription(
                             result.text,
                             is_partial=result.is_partial
                         )
 
-                        # Get display info
-                        _lines, _current_line_idx, word_offset = self.tracker.get_display_lines(
-                            past_lines=self.server.settings.get("pastLines", 1),
-                            future_lines=self.server.settings.get("futureLines", 8)
+            # Poll for tracking results (independent of audio processing)
+            if self.tracker:
+                tracking_result = self.tracker.get_latest_result(timeout=0)
+                if tracking_result:
+                    position = tracking_result.position
+                    word_offset = tracking_result.word_offset
+
+                    # Only send update if position has actually changed
+                    position_changed: bool = (
+                        position.word_index != self._last_sent_word_index or
+                        position.line_index != self._last_sent_line_index or
+                        word_offset != self._last_sent_word_offset
+                    )
+
+                    # Send update only when position changes
+                    if position_changed:
+                        # Send update to clients
+                        await self.server.send_position(
+                            word_index=position.word_index,
+                            line_index=position.line_index,
+                            word_offset=word_offset,
+                            confidence=position.confidence,
+                            is_backtrack=position.is_jump,
+                            transcript=""
                         )
 
-                        # Only send update if position has actually changed
-                        position_changed: bool = (
-                            position.word_index != self._last_sent_word_index or
-                            position.line_index != self._last_sent_line_index or
-                            word_offset != self._last_sent_word_offset
-                        )
-
-                        # Send update only when position changes
-                        if position_changed:
-                            # Send update to clients
-                            await self.server.send_position(
-                                word_index=position.word_index,
-                                line_index=position.line_index,
-                                word_offset=word_offset,
-                                confidence=position.confidence,
-                                is_backtrack=False,  # TODO: Fix this
-                                transcript=result.text if result.is_partial else ""
-                            )
-
-                            # Update last sent position
-                            self._last_sent_word_index = position.word_index
-                            self._last_sent_line_index = position.line_index
-                            self._last_sent_word_offset = word_offset
+                        # Update last sent position
+                        self._last_sent_word_index = position.word_index
+                        self._last_sent_line_index = position.line_index
+                        self._last_sent_word_offset = word_offset
 
             # Small sleep to prevent CPU spinning
             await asyncio.sleep(0.01)
@@ -404,6 +413,9 @@ class AutocueApp:
         """Stop the autocue application."""
         print("\nStopping Autocue...")
         self.running = False
+
+        if self.tracker:
+            self.tracker.shutdown()
 
         if self.audio:
             self.audio.stop()
