@@ -57,6 +57,13 @@ PATTERNS: dict[str, Pattern[str]] = {
 
     # Rate units: 100GB/s, 1,000MB/s (number + unit + "/" + unit, with optional commas)
     'rate_unit': re.compile(rf'^({_NUMBER_PATTERN})([A-Za-z]+)/([A-Za-z]+)$'),
+
+    # Unit-only rates: m/s, km/h, ft/s (unit + "/" + unit, no number prefix)
+    'unit_only_rate': re.compile(r'^([A-Za-z]+)/([A-Za-z]+)$'),
+
+    # Standalone units: km, ms, gb, etc. (2+ letter units without numbers)
+    # Only matches 2+ characters to avoid matching single letters
+    'standalone_unit': re.compile(r'^[A-Za-z]{2,}$'),
 }
 
 
@@ -108,6 +115,7 @@ UNIT_EXPANSIONS: dict[str, list[list[str]]] = {
     'ns': [['n', 's'], ['nanoseconds'], ['nanosecond']],
     'us': [['u', 's'], ['microseconds'], ['microsecond']],
     'min': [['min'], ['minutes'], ['minute']],
+    'h': [['h'], ['hours'], ['hour']],
     'hr': [['h', 'r'], ['hours'], ['hour']],
     'hrs': [['h', 'r', 's'], ['hours']],
 
@@ -155,6 +163,27 @@ CURRENCY_SYMBOLS: dict[str, list[list[str]]] = {
     '¥': [['yen']],
 }
 
+# Safe standalone units (2+ chars only) that are unlikely to conflict with common English words
+# Excludes: "in" (common word), "min" (could be word), "hr/hrs" (less common but possible)
+# These are technical abbreviations that are rarely used as standalone words
+SAFE_STANDALONE_UNITS: frozenset[str] = frozenset([
+    # Data storage
+    'kb', 'mb', 'gb', 'tb', 'pb',
+    # Distance (excluding 'in' as it is a common word)
+    'km', 'cm', 'mm', 'mi', 'ft', 'yd',
+    # Time (excluding 'min', 'us' as they could be words)
+    'ms', 'ns', 'hr', 'hrs',
+    # Frequency
+    'hz', 'khz', 'mhz', 'ghz',
+    # Speed (excluding 'mph', 'kph', 'fps', 'bps' - these are compound units)
+    # Weight
+    'kg', 'mg', 'lb', 'lbs', 'oz',
+    # Volume
+    'ml',
+    # Other
+    'px', 'db', 'kw', 'mw', 'ma',
+])
+
 
 # Digit to word mapping
 DIGIT_WORDS: dict[str, str] = {
@@ -172,6 +201,7 @@ def is_number_token(token: str) -> bool:
     - Decimals (3.07, 0.5)
     - Ordinals (1st, 2nd, 23rd)
     - Mixed alphanumeric (M3, 4K, 100GB)
+    - Standalone units (km, ms, gb) - only if in SAFE_STANDALONE_UNITS
 
     Returns False for:
     - Regular words
@@ -181,7 +211,18 @@ def is_number_token(token: str) -> bool:
     if not stripped:
         return False
 
-    return any(pattern.match(stripped) for pattern in PATTERNS.values())
+    # Check all patterns except standalone_unit
+    for pattern_name, pattern in PATTERNS.items():
+        if pattern_name == 'standalone_unit':
+            # Special handling: only return True if it's a safe standalone unit
+            if pattern.match(stripped):
+                # Check if it's actually in SAFE_STANDALONE_UNITS
+                if stripped.lower() in SAFE_STANDALONE_UNITS:
+                    return True
+        elif pattern.match(stripped):
+            return True
+
+    return False
 
 
 def _digit_by_digit(num: int) -> list[str]:
@@ -426,7 +467,8 @@ def expand_currency(token: str) -> list[list[str]]:
     num_str: str = match.group(2)
 
     # Get currency word alternatives
-    currency_words_list: list[list[str]] = CURRENCY_SYMBOLS.get(symbol, [[symbol]])
+    currency_words_list: list[list[str]] = CURRENCY_SYMBOLS.get(symbol, [
+                                                                [symbol]])
 
     # Expand the number part
     num_expansions: list[list[str]] = _expand_number_part(num_str)
@@ -615,6 +657,83 @@ def expand_rate_unit(token: str) -> list[list[str]]:
     return alternatives
 
 
+def expand_unit_only_rate(token: str) -> list[list[str]]:
+    """Expand unit-only rate tokens like m/s, km/h, ft/s.
+
+    Args:
+        token: Unit-only rate token (e.g., "m/s", "km/h")
+
+    Returns:
+        List of alternatives
+
+    Examples:
+        "m/s" -> [["m", "per", "s"],
+                  ["metres", "per", "second"],
+                  ["meters", "per", "second"]]
+        "km/h" -> [["k", "m", "per", "h"],
+                   ["kilometres", "per", "hour"],
+                   ["kilometers", "per", "hour"]]
+    """
+    stripped: str = token.strip()
+    alternatives: list[list[str]] = []
+
+    unit_match: re.Match[str] | None = PATTERNS['unit_only_rate'].match(
+        stripped)
+    if not unit_match:
+        return []
+
+    first_unit: str = unit_match.group(1)
+    second_unit: str = unit_match.group(2)
+
+    # Expand both units
+    first_unit_expansions: list[list[str]] = _expand_unit_suffix(first_unit)
+    second_unit_expansions: list[list[str]] = _expand_unit_suffix(second_unit)
+
+    for first_exp in first_unit_expansions:
+        for second_exp in second_unit_expansions:
+            alt: list[str] = first_exp + ['per'] + second_exp
+            if alt not in alternatives:
+                alternatives.append(alt)
+
+    return alternatives
+
+
+def expand_standalone_unit(token: str) -> list[list[str]]:
+    """Expand standalone unit tokens (2+ characters only).
+
+    Only expands units that are in SAFE_STANDALONE_UNITS to avoid
+    expanding common English words like "in", "min", "hr".
+
+    Args:
+        token: Standalone unit token (e.g., "km", "ms", "gb")
+
+    Returns:
+        List of alternatives
+
+    Examples:
+        "km" -> [["k", "m"], ["kilometres"], ["kilometers"]]
+        "ms" -> [["m", "s"], ["milliseconds"], ["millisecond"]]
+        "gb" -> [["g", "b"], ["gigabytes"], ["gigabyte"]]
+        "in" -> [] (common English word, not expanded)
+    """
+    stripped: str = token.strip()
+
+    # Only process if it's 2+ characters
+    if len(stripped) < 2:
+        return []
+
+    # Check if this is a safe standalone unit
+    unit_lower: str = stripped.lower()
+    if unit_lower not in SAFE_STANDALONE_UNITS:
+        return []
+
+    # Get expansions from UNIT_EXPANSIONS
+    if unit_lower in UNIT_EXPANSIONS:
+        return UNIT_EXPANSIONS[unit_lower]
+
+    return []
+
+
 def get_number_expansions(token: str) -> list[list[str]] | None:
     """Get all possible spoken expansions for a number token.
 
@@ -666,6 +785,16 @@ def get_number_expansions(token: str) -> list[list[str]] | None:
     # Try rate units (100GB/s, 1000MB/s) - check before mixed alphanumeric
     if PATTERNS['rate_unit'].match(stripped):
         return expand_rate_unit(stripped)
+
+    # Try unit-only rates (m/s, km/h) - check before mixed alphanumeric
+    if PATTERNS['unit_only_rate'].match(stripped):
+        return expand_unit_only_rate(stripped)
+
+    # Try standalone units (km, ms, gb) - only 2+ chars, check before mixed alphanumeric
+    if PATTERNS['standalone_unit'].match(stripped):
+        result = expand_standalone_unit(stripped)
+        if result:  # Only return if it's a known unit
+            return result
 
     # Try mixed alphanumeric (prefix or suffix)
     if PATTERNS['prefix_mixed'].match(stripped) or PATTERNS['suffix_mixed'].match(stripped):

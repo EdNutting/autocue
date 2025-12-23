@@ -91,6 +91,7 @@ Let's talk about algorithm complexity:
 - O(2^n) - exponential, becomes impractical
 
 For n = 1,000,000:
+
 - log(n) ~ 20 operations
 - n = 1,000,000 operations
 - n^2 = 1,000,000,000,000 operations
@@ -107,6 +108,7 @@ Speaking of computing, here are some common measurements:
 - Storage speed: 500MB/s for SSDs, 100-200MB/s for HDDs
 
 In physics:
+
 - Room temperature: ~20C or ~68F
 - Absolute zero: -273.15C or 0K
 - Speed of sound: ~343m/s or ~767mph

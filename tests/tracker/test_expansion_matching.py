@@ -641,3 +641,110 @@ class TestExpansionStateClearingOnPositionChange:
         # Should be at position after "written"
         assert tracker.optimistic_position == 6
         assert not result.is_jump
+
+
+class TestUnitOnlyRateMatching:
+    """Tests for matching unit-only rate expressions like m/s, km/h."""
+
+    def test_ms_matches_metres_per_second(self) -> None:
+        """'m/s' should match when spoken as 'metres per second'."""
+        tracker: ScriptTracker = ScriptTracker("The velocity is 10 m/s")
+        tracker.update("the velocity is ten")
+        pos_before: int = tracker.optimistic_position
+
+        # Say "metres per second" for "m/s"
+        tracker.update("the velocity is ten metres per second")
+        pos_after: int = tracker.optimistic_position
+
+        # Should have advanced past "m/s"
+        assert pos_after > pos_before
+
+    def test_ms_matches_meters_per_second(self) -> None:
+        """'m/s' should match when spoken as 'meters per second' (US spelling)."""
+        tracker: ScriptTracker = ScriptTracker("The velocity is 10 m/s")
+        tracker.update("the velocity is ten")
+        pos_before: int = tracker.optimistic_position
+
+        # Say "meters per second" for "m/s"
+        tracker.update("the velocity is ten meters per second")
+        pos_after: int = tracker.optimistic_position
+
+        # Should have advanced past "m/s"
+        assert pos_after > pos_before
+
+    def test_ms_matches_m_per_s(self) -> None:
+        """'m/s' should match when spoken as 'm per s' (letter-by-letter)."""
+        tracker: ScriptTracker = ScriptTracker("The velocity is 10 m/s")
+        tracker.update("the velocity is ten")
+        pos_before: int = tracker.optimistic_position
+
+        # Say "m per s" for "m/s"
+        tracker.update("the velocity is ten m per s")
+        pos_after: int = tracker.optimistic_position
+
+        # Should have advanced past "m/s"
+        assert pos_after > pos_before
+
+    def test_kmh_matches_kilometres_per_hour(self) -> None:
+        """'km/h' should match when spoken as 'kilometres per hour'."""
+        tracker: ScriptTracker = ScriptTracker("The speed limit is 50 km/h")
+        tracker.update("the speed limit is fifty")
+        pos_before: int = tracker.optimistic_position
+
+        # Say "kilometres per hour" for "km/h"
+        tracker.update("the speed limit is fifty kilometres per hour")
+        pos_after: int = tracker.optimistic_position
+
+        # Should have advanced past "km/h"
+        assert pos_after > pos_before
+
+    def test_kmh_matches_kilometers_per_hour(self) -> None:
+        """'km/h' should match when spoken as 'kilometers per hour' (US spelling)."""
+        tracker: ScriptTracker = ScriptTracker("The speed limit is 50 km/h")
+        tracker.update("the speed limit is fifty")
+        pos_before: int = tracker.optimistic_position
+
+        # Say "kilometers per hour" for "km/h"
+        tracker.update("the speed limit is fifty kilometers per hour")
+        pos_after: int = tracker.optimistic_position
+
+        # Should have advanced past "km/h"
+        assert pos_after > pos_before
+
+    def test_fts_matches_feet_per_second(self) -> None:
+        """'ft/s' should match when spoken as 'feet per second'."""
+        tracker: ScriptTracker = ScriptTracker("The projectile travels at 100 ft/s")
+        tracker.update("the projectile travels at one hundred")
+        pos_before: int = tracker.optimistic_position
+
+        # Say "feet per second" for "ft/s"
+        tracker.update("the projectile travels at one hundred feet per second")
+        pos_after: int = tracker.optimistic_position
+
+        # Should have advanced past "ft/s"
+        assert pos_after > pos_before
+
+    def test_combined_10ms_matches_ten_metres_per_second(self) -> None:
+        """'10m/s' (combined) should match when spoken as 'ten metres per second'."""
+        tracker: ScriptTracker = ScriptTracker("Acceleration is 10m/s")
+        tracker.update("acceleration is")
+        pos_before: int = tracker.optimistic_position
+
+        # Say "ten metres per second" for "10m/s"
+        tracker.update("acceleration is ten metres per second")
+        pos_after: int = tracker.optimistic_position
+
+        # Should have advanced past "10m/s"
+        assert pos_after > pos_before
+
+    def test_unit_rate_in_full_sentence(self) -> None:
+        """Unit rates should work correctly in full sentences."""
+        tracker: ScriptTracker = ScriptTracker(
+            "Sound travels at approximately 343 m/s in air")
+
+        # Advance through the sentence
+        tracker.update(
+            "sound travels at approximately three hundred forty three metres per second in air")
+
+        # Should have progressed through most of the script
+        assert tracker.progress > 0.8

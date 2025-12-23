@@ -238,3 +238,91 @@ class TestPreprocessTokenForPunctuation:
         """'3.14' should remain as ['3.14'] (period not in PUNCTUATION_EXPANSIONS)."""
         result: list[str] = preprocess_token_for_punctuation("3.14")
         assert result == ["3.14"]
+
+    def test_preserves_unit_rate_with_slash(self) -> None:
+        """'m/s' should remain as ['m/s'] (unit rate pattern)."""
+        result: list[str] = preprocess_token_for_punctuation("m/s")
+        assert result == ["m/s"]
+
+    def test_preserves_km_per_hour(self) -> None:
+        """'km/h' should remain as ['km/h'] (unit rate pattern)."""
+        result: list[str] = preprocess_token_for_punctuation("km/h")
+        assert result == ["km/h"]
+
+    def test_preserves_feet_per_second(self) -> None:
+        """'ft/s' should remain as ['ft/s'] (unit rate pattern)."""
+        result: list[str] = preprocess_token_for_punctuation("ft/s")
+        assert result == ["ft/s"]
+
+
+class TestPeriodHandling:
+    """Tests for period handling in token preprocessing."""
+
+    def test_splits_on_internal_period(self) -> None:
+        """'hello.world' should split into ['hello', '.', 'world']."""
+        result: list[str] = preprocess_token_for_punctuation("hello.world")
+        assert result == ["hello", ".", "world"]
+
+    def test_strips_leading_period(self) -> None:
+        """'.hello' should become ['hello']."""
+        result: list[str] = preprocess_token_for_punctuation(".hello")
+        assert result == ["hello"]
+
+    def test_strips_trailing_period(self) -> None:
+        """'hello.' should become ['hello']."""
+        result: list[str] = preprocess_token_for_punctuation("hello.")
+        assert result == ["hello"]
+
+    def test_condenses_multiple_periods(self) -> None:
+        """'...' should become ['.']."""
+        result: list[str] = preprocess_token_for_punctuation("...")
+        assert result == ["."]
+
+    def test_condenses_many_periods(self) -> None:
+        """'.....' should become ['.']."""
+        result: list[str] = preprocess_token_for_punctuation(".....")
+        assert result == ["."]
+
+    def test_preserves_standalone_period(self) -> None:
+        """'.' should remain as ['.']."""
+        result: list[str] = preprocess_token_for_punctuation(".")
+        assert result == ["."]
+
+    def test_multiple_internal_periods(self) -> None:
+        """'a.b.c' should split into ['a', '.', 'b', '.', 'c']."""
+        result: list[str] = preprocess_token_for_punctuation("a.b.c")
+        assert result == ["a", ".", "b", ".", "c"]
+
+    def test_leading_and_trailing_with_internal(self) -> None:
+        """'.hello.world.' should become ['hello', '.', 'world']."""
+        result: list[str] = preprocess_token_for_punctuation(".hello.world.")
+        assert result == ["hello", ".", "world"]
+
+    def test_period_with_other_punctuation(self) -> None:
+        """'a.b+c' should split into ['a', '.', 'b', '+', 'c']."""
+        result: list[str] = preprocess_token_for_punctuation("a.b+c")
+        assert result == ["a", ".", "b", "+", "c"]
+
+    def test_preserves_decimal_numbers(self) -> None:
+        """'3.14' (decimal number) should remain as ['3.14']."""
+        result: list[str] = preprocess_token_for_punctuation("3.14")
+        # Decimal numbers are recognized as number tokens and preserved
+        assert result == ["3.14"]
+
+    def test_url_like_pattern(self) -> None:
+        """'www.example.com' should split (not a number, so periods split)."""
+        result: list[str] = preprocess_token_for_punctuation("www.example.com")
+        # Not a number token, so periods cause splitting
+        assert result == ["www", ".", "example", ".", "com"]
+
+    def test_ellipsis_in_sentence(self) -> None:
+        """'hello...' should become ['hello']."""
+        result: list[str] = preprocess_token_for_punctuation("hello...")
+        # Multiple trailing periods are condensed then stripped
+        assert result == ["hello"]
+
+    def test_condenses_then_splits(self) -> None:
+        """'a...b' should become ['a', '.', 'b'] (condense then split)."""
+        result: list[str] = preprocess_token_for_punctuation("a...b")
+        # Multiple periods condensed to one, then split
+        assert result == ["a", ".", "b"]

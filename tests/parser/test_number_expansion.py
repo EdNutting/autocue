@@ -916,3 +916,199 @@ class TestRateUnits:
         # Check that "per" is in at least one expansion
         has_per: bool = any("per" in exp for exp in sw.all_expansions)
         assert has_per
+
+
+class TestUnitOnlyRates:
+    """Tests for unit-only rate expressions (m/s, km/h, etc.) without number prefixes."""
+
+    def test_ms_is_number_token(self) -> None:
+        """'m/s' should be recognized as a number token."""
+        assert is_number_token("m/s") is True
+
+    def test_kmh_is_number_token(self) -> None:
+        """'km/h' should be recognized as a number token."""
+        assert is_number_token("km/h") is True
+
+    def test_fts_is_number_token(self) -> None:
+        """'ft/s' should be recognized as a number token."""
+        assert is_number_token("ft/s") is True
+
+    def test_ms_expansion(self) -> None:
+        """'m/s' should expand to 'metres per second'."""
+        expansions: list[list[str]] | None = get_number_expansions("m/s")
+        assert expansions is not None
+        # Should have "metres per second" or "meters per second"
+        has_metres_per_second: bool = any(
+            ("metres" in exp or "meters" in exp) and "per" in exp and "second" in exp
+            for exp in expansions
+        )
+        assert has_metres_per_second, "'m/s' should expand to 'metres per second'"
+        # Should also have letter-by-letter form: "m per s"
+        assert ["m", "per", "s"] in expansions
+
+    def test_kmh_expansion(self) -> None:
+        """'km/h' should expand to 'kilometres per hour'."""
+        expansions: list[list[str]] | None = get_number_expansions("km/h")
+        assert expansions is not None
+        # Should have "kilometres per hour" or "kilometers per hour"
+        has_km_per_hour: bool = any(
+            ("kilometres" in exp or "kilometers" in exp) and "per" in exp and "hour" in exp
+            for exp in expansions
+        )
+        assert has_km_per_hour, "'km/h' should expand to 'kilometres per hour'"
+
+    def test_fts_expansion(self) -> None:
+        """'ft/s' should expand to 'feet per second'."""
+        expansions: list[list[str]] | None = get_number_expansions("ft/s")
+        assert expansions is not None
+        # Should have "feet per second" or "foot per second"
+        has_feet_per_second: bool = any(
+            ("feet" in exp or "foot" in exp) and "per" in exp and "second" in exp
+            for exp in expansions
+        )
+        assert has_feet_per_second, "'ft/s' should expand to 'feet per second'"
+
+    def test_mph_no_slash(self) -> None:
+        """'mph' (without slash) should already be recognized and expanded."""
+        # mph is already a combined unit in UNIT_EXPANSIONS
+        expansions: list[list[str]] | None = get_number_expansions("mph")
+        # mph alone is not a number token (needs a number), but when attached to a number it works
+        # So this test verifies the current behavior
+        assert expansions is None, "mph alone is not a number token (needs a number prefix)"
+
+    def test_ms_in_script(self) -> None:
+        """'m/s' in script should create expansion speakable words."""
+        script: str = "The velocity is 10 m/s"
+        html: str = markdown.markdown(
+            script, extensions=['nl2br', 'sane_lists'])
+        parsed: ParsedScript = parse_script(script, html)
+
+        # Find expansion words for both "10" and "m/s"
+        expansion_words: list[SpeakableWord] = [
+            sw for sw in parsed.speakable_words if sw.is_expansion]
+        # Should have TWO expansion words: one for "10" and one for "m/s"
+        assert len(expansion_words) == 2
+
+        # Find the m/s expansion
+        ms_expansions: list[SpeakableWord] = [
+            sw for sw in expansion_words
+            if sw.all_expansions and any("per" in exp for exp in sw.all_expansions if isinstance(exp, list))
+        ]
+        assert len(ms_expansions) >= 1, "Should have expansion for m/s"
+
+        sw: SpeakableWord = ms_expansions[0]
+        assert sw.all_expansions is not None
+        # Check that "per" is in at least one expansion
+        has_per: bool = any("per" in exp for exp in sw.all_expansions)
+        assert has_per
+
+    def test_combined_number_and_unit_rate(self) -> None:
+        """'10m/s' (combined) should be treated as one token."""
+        # This is the existing case of number+unit+/+unit
+        expansions: list[list[str]] | None = get_number_expansions("10m/s")
+        assert expansions is not None
+        # Should have "ten metres per second" style expansions
+        has_ten_metres_per_second: bool = any(
+            "ten" in exp and ("metres" in exp or "meters" in exp) and "per" in exp
+            for exp in expansions
+        )
+        assert has_ten_metres_per_second
+
+
+class TestStandaloneUnits:
+    """Tests for standalone unit tokens (2+ characters only)."""
+
+    def test_km_is_number_token(self) -> None:
+        """'km' (2 chars) should be recognized as a number token."""
+        assert is_number_token("km") is True
+
+    def test_ms_is_number_token(self) -> None:
+        """'ms' (2 chars) should be recognized as a number token."""
+        assert is_number_token("ms") is True
+
+    def test_gb_is_number_token(self) -> None:
+        """'gb' (2 chars) should be recognized as a number token."""
+        assert is_number_token("gb") is True
+
+    def test_single_char_m_not_number_token(self) -> None:
+        """'m' (1 char) should NOT be recognized as a number token."""
+        assert is_number_token("m") is False
+
+    def test_single_char_s_not_number_token(self) -> None:
+        """'s' (1 char) should NOT be recognized as a number token."""
+        assert is_number_token("s") is False
+
+    def test_km_expansion(self) -> None:
+        """'km' should expand to 'kilometres', 'kilometers', and 'k m'."""
+        expansions: list[list[str]] | None = get_number_expansions("km")
+        assert expansions is not None
+        # Should have letter-by-letter
+        assert ["k", "m"] in expansions
+        # Should have word form
+        has_kilometres: bool = any(
+            "kilometres" in exp or "kilometers" in exp
+            for exp in expansions
+        )
+        assert has_kilometres, "'km' should expand to 'kilometres' or 'kilometers'"
+
+    def test_ms_expansion(self) -> None:
+        """'ms' should expand to 'milliseconds', 'millisecond', and 'm s'."""
+        expansions: list[list[str]] | None = get_number_expansions("ms")
+        assert expansions is not None
+        # Should have letter-by-letter
+        assert ["m", "s"] in expansions
+        # Should have word forms
+        has_milliseconds: bool = any(
+            "milliseconds" in exp or "millisecond" in exp
+            for exp in expansions
+        )
+        assert has_milliseconds, "'ms' should expand to 'milliseconds'"
+
+    def test_gb_expansion(self) -> None:
+        """'gb' should expand to 'gigabytes', 'gigabyte', and 'g b'."""
+        expansions: list[list[str]] | None = get_number_expansions("gb")
+        assert expansions is not None
+        # Should have letter-by-letter
+        assert ["g", "b"] in expansions
+        # Should have word forms
+        has_gigabytes: bool = any(
+            "gigabytes" in exp or "gigabyte" in exp
+            for exp in expansions
+        )
+        assert has_gigabytes, "'gb' should expand to 'gigabytes'"
+
+    def test_hz_expansion(self) -> None:
+        """'hz' should expand to 'hertz' and 'h z'."""
+        expansions: list[list[str]] | None = get_number_expansions("hz")
+        assert expansions is not None
+        # Should have letter-by-letter
+        assert ["h", "z"] in expansions
+        # Should have word form
+        assert ["hertz"] in expansions
+
+    def test_unknown_unit_not_expanded(self) -> None:
+        """Unknown 2+ char sequences should not expand."""
+        expansions: list[list[str]] | None = get_number_expansions("xyz")
+        assert expansions is None, "Unknown unit 'xyz' should not expand"
+
+    def test_standalone_unit_in_script(self) -> None:
+        """Standalone units in script should create expansion speakable words."""
+        script: str = "The distance is measured in km"
+        html: str = markdown.markdown(
+            script, extensions=['nl2br', 'sane_lists'])
+        parsed: ParsedScript = parse_script(script, html)
+
+        # Find expansion words for "km"
+        expansion_words: list[SpeakableWord] = [
+            sw for sw in parsed.speakable_words if sw.is_expansion]
+        # Should have ONE expansion word for "km"
+        assert len(expansion_words) == 1
+
+        sw: SpeakableWord = expansion_words[0]
+        assert sw.all_expansions is not None
+        # Check that "kilometres" or "kilometers" is in at least one expansion
+        has_kilometres: bool = any(
+            "kilometres" in exp or "kilometers" in exp
+            for exp in sw.all_expansions
+        )
+        assert has_kilometres

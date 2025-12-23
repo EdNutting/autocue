@@ -211,6 +211,66 @@ def is_silent_punctuation(token: str) -> bool:
     return all(c in SILENT_PUNCTUATION for c in stripped) if stripped else True
 
 
+def preprocess_periods(token: str) -> list[str]:
+    """Preprocess a token to handle periods correctly.
+
+    Rules:
+    1. Multiple periods (2+) are condensed to a single period
+    2. Leading periods are stripped
+    3. Trailing periods are stripped
+    4. Internal periods cause the token to be split
+    5. Standalone periods are preserved as "." (represents the word "dot")
+
+    Args:
+        token: Token to preprocess
+
+    Returns:
+        List of sub-tokens after period handling
+
+    Examples:
+        "hello.world" -> ["hello", ".", "world"]
+        ".hello" -> ["hello"]
+        "hello." -> ["hello"]
+        "..." -> ["."]
+        "...." -> ["."]
+        "a.b.c" -> ["a", ".", "b", ".", "c"]
+        "." -> ["."]
+    """
+    if not token or not token.strip():
+        return []
+
+    # First, condense multiple periods to a single period
+    import re
+    condensed = re.sub(r'\.{2,}', '.', token)
+
+    # Check if it's just a standalone period after condensing
+    if condensed == '.':
+        return ['.']
+
+    # Strip leading and trailing periods
+    stripped = condensed.strip('.')
+
+    # If nothing left after stripping, the token was all periods (already handled above)
+    if not stripped:
+        return ['.']
+
+    # Split on remaining internal periods
+    if '.' not in stripped:
+        # No internal periods
+        return [stripped]
+
+    # Split on periods and insert period tokens between parts
+    parts = stripped.split('.')
+    result: list[str] = []
+    for i, part in enumerate(parts):
+        if part:  # Skip empty parts
+            result.append(part)
+        if i < len(parts) - 1:  # Add period between parts (not after last)
+            result.append('.')
+
+    return result if result else []
+
+
 def preprocess_token_for_punctuation(token: str) -> list[str]:
     """Preprocess a token to add spaces around expandable punctuation.
 
@@ -221,7 +281,8 @@ def preprocess_token_for_punctuation(token: str) -> list[str]:
     Exceptions:
     - Minus (-) is preserved when part of negative numbers
     - Forward slash (/) is preserved as it may be part of unit names
-    - Tokens that match known number patterns (e.g., "25%", "$100") are not split
+    - Tokens that match known number patterns (e.g., "25%", "$100", "3.14") are not split
+    - Periods are handled specially (see preprocess_periods) but preserved in numbers
 
     Args:
         token: Token to preprocess
@@ -236,6 +297,44 @@ def preprocess_token_for_punctuation(token: str) -> list[str]:
         "-100" -> ["-100"]  (minus preserved)
         "100GB/s" -> ["100GB/s"]  (slash preserved)
         "25%" -> ["25%"]  (known number pattern, preserved)
+        "3.14" -> ["3.14"]  (decimal number, preserved)
+        "hello.world" -> ["hello", ".", "world"]  (period handling)
+    """
+    if not token or not token.strip():
+        return []
+
+    # Check if token is a number pattern FIRST - if so, don't process periods
+    stripped = strip_surrounding_punctuation(token)
+    if is_number_token(stripped) or is_number_token(token.strip()):
+        # This is a number token - skip period processing
+        return _preprocess_token_for_other_punctuation(token)
+
+    # Not a number, so handle periods specially
+    period_processed = preprocess_periods(token)
+
+    # If period processing split the token or returned a standalone period, process each part
+    if len(period_processed) > 1 or (len(period_processed) == 1 and period_processed[0] == '.'):
+        # Process each non-period part recursively for other punctuation
+        result: list[str] = []
+        for part in period_processed:
+            if part == '.':
+                # Keep standalone periods as-is
+                result.append('.')
+            else:
+                # Process for other punctuation
+                sub_results = _preprocess_token_for_other_punctuation(part)
+                result.extend(sub_results)
+        return result
+
+    # No period splitting needed, process the single token
+    return _preprocess_token_for_other_punctuation(period_processed[0] if period_processed else token)
+
+
+def _preprocess_token_for_other_punctuation(token: str) -> list[str]:
+    """Helper function to process token for non-period punctuation.
+
+    This is the original preprocess_token_for_punctuation logic,
+    extracted so it can be called after period preprocessing.
     """
     if not token or not token.strip():
         return []
