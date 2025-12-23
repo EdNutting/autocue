@@ -7,7 +7,7 @@
     <title>Autocue</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600&family=Inter:wght@400;500;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Oswald:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -17,129 +17,221 @@
 
         :root {
             --font-size: 48px;
-            --font-family: "Crimson Pro", Georgia, serif;
+            --font-family: "Merriweather", Georgia, serif;
             --line-height: 1.6;
-            --text-color: #FFFFFF;
-            --dim-color: #555555;
-            --highlight-color: #FFD700;
-            --bg-color: #0a0a0a;
+            --text-color: #FFF8E7;
+            --dim-color: #6B4423;
+            --highlight-color: #FF8C42;
+            --bg-color: #0D0D0D;
+            --panel-bg: #1A1A1A;
+            --border-color: #2A2A2A;
+            --signal-green: #2ECC71;
+            --signal-red: #E63946;
             --past-lines: 1;
         }
 
+        @keyframes glow {
+            0%, 100% {
+                box-shadow: 0 0 5px var(--highlight-color),
+                           0 0 10px var(--highlight-color),
+                           0 0 15px rgba(255, 140, 66, 0.5);
+            }
+            50% {
+                box-shadow: 0 0 10px var(--highlight-color),
+                           0 0 20px var(--highlight-color),
+                           0 0 30px rgba(255, 140, 66, 0.7);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
         body {
-            font-family: var(--font-family);
-            font-size: var(--font-size);
-            line-height: var(--line-height);
-            background-color: var(--bg-color);
+            font-family: "Courier Prime", "Courier New", monospace;
+            background: linear-gradient(180deg, #0D0D0D 0%, #1A1A1A 100%);
             color: var(--text-color);
             overflow: hidden;
             height: 100vh;
-            transition: background-color 0.3s ease;
+            position: relative;
         }
 
         /* Editor Mode */
         #editor-container {
             display: flex;
             height: 100vh;
-            background: #111;
+            background: var(--bg-color);
         }
 
         #editor-panel {
             flex: 1;
-            padding: 24px;
+            padding: 32px;
             display: flex;
             flex-direction: column;
-            border-right: 1px solid #333;
+            border-right: 3px solid var(--border-color);
+            background: linear-gradient(135deg, #0D0D0D 0%, #1A1A1A 100%);
+            position: relative;
+        }
+
+        #editor-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(ellipse at top left, rgba(255, 140, 66, 0.05) 0%, transparent 50%);
+            pointer-events: none;
         }
 
         #settings-panel {
-            width: 320px;
-            padding: 24px;
+            width: 380px;
+            padding: 32px;
             overflow-y: auto;
-            background: #0d0d0d;
+            background: var(--panel-bg);
+            border-left: 1px solid rgba(255, 140, 66, 0.2);
+            box-shadow: inset 5px 0 15px rgba(0, 0, 0, 0.5);
         }
 
         #script-input {
             flex: 1;
             width: 100%;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 8px;
-            color: #fff;
-            font-family: "Inter", sans-serif;
-            font-size: 16px;
-            line-height: 1.6;
-            padding: 20px;
+            background: #0A0A0A;
+            border: 2px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-color);
+            font-family: "Courier Prime", monospace;
+            font-size: 15px;
+            line-height: 1.7;
+            padding: 24px;
             resize: none;
             outline: none;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.6);
+            transition: border-color 0.3s ease;
+            position: relative;
+            z-index: 1;
         }
 
         #script-input:focus {
-            border-color: #555;
+            border-color: var(--highlight-color);
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.6),
+                        0 0 0 1px var(--highlight-color);
         }
 
         #script-input::placeholder {
-            color: #666;
+            color: #4A4A4A;
         }
 
         .editor-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
+            position: relative;
+            z-index: 1;
         }
 
         .editor-title {
-            font-family: "Inter", sans-serif;
-            font-size: 14px;
+            font-family: "Oswald", sans-serif;
+            font-size: 12px;
             font-weight: 600;
-            color: #888;
+            color: var(--highlight-color);
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 2px;
+            padding: 8px 12px;
+            background: rgba(255, 140, 66, 0.1);
+            border: 1px solid rgba(255, 140, 66, 0.3);
+            border-radius: 2px;
         }
 
         .btn {
-            font-family: "Inter", sans-serif;
+            font-family: "Oswald", sans-serif;
             font-size: 14px;
-            font-weight: 500;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
+            font-weight: 600;
+            padding: 12px 24px;
+            border: 2px solid;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s ease, height 0.6s ease;
+        }
+
+        .btn:hover::before {
+            width: 300px;
+            height: 300px;
         }
 
         .btn-primary {
-            background: #FFD700;
-            color: #000;
+            background: var(--highlight-color);
+            border-color: var(--highlight-color);
+            color: #0D0D0D;
+            box-shadow: 0 4px 15px rgba(255, 140, 66, 0.4);
         }
 
         .btn-primary:hover {
-            background: #FFED4A;
-            transform: translateY(-1px);
+            background: #FFA057;
+            border-color: #FFA057;
+            box-shadow: 0 6px 20px rgba(255, 140, 66, 0.6);
+            transform: translateY(-2px);
         }
 
         .btn-secondary {
-            background: #333;
-            color: #fff;
+            background: transparent;
+            border-color: var(--border-color);
+            color: var(--text-color);
         }
 
         .btn-secondary:hover {
-            background: #444;
+            border-color: var(--highlight-color);
+            color: var(--highlight-color);
+            background: rgba(255, 140, 66, 0.05);
         }
 
         .settings-section {
-            margin-bottom: 28px;
+            margin-bottom: 32px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 2px;
+            position: relative;
+        }
+
+        .settings-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 3px;
+            height: 100%;
+            background: linear-gradient(180deg, var(--highlight-color) 0%, transparent 100%);
         }
 
         .settings-title {
-            font-family: "Inter", sans-serif;
-            font-size: 11px;
-            font-weight: 600;
-            color: #666;
+            font-family: "Oswald", sans-serif;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--highlight-color);
             text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 14px;
+            letter-spacing: 2px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 140, 66, 0.2);
         }
 
         .setting-row {
@@ -150,39 +242,62 @@
         }
 
         .setting-label {
-            font-family: "Inter", sans-serif;
-            font-size: 13px;
-            color: #aaa;
+            font-family: "Courier Prime", monospace;
+            font-size: 14px;
+            color: #AAA;
+            letter-spacing: 0.5px;
         }
 
         .setting-input {
             width: 80px;
-            padding: 6px 10px;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 4px;
-            color: #fff;
-            font-family: "Inter", sans-serif;
-            font-size: 13px;
+            padding: 8px 12px;
+            background: #0A0A0A;
+            border: 1px solid var(--border-color);
+            border-radius: 2px;
+            color: var(--highlight-color);
+            font-family: "Courier Prime", monospace;
+            font-size: 14px;
             text-align: right;
+            font-weight: 700;
+            transition: all 0.3s ease;
+        }
+
+        .setting-input:focus {
+            outline: none;
+            border-color: var(--highlight-color);
+            box-shadow: 0 0 8px rgba(255, 140, 66, 0.3);
         }
 
         .setting-select {
-            padding: 6px 10px;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 4px;
-            color: #fff;
-            font-family: "Inter", sans-serif;
-            font-size: 13px;
+            padding: 8px 12px;
+            background: #0A0A0A;
+            border: 1px solid var(--border-color);
+            border-radius: 2px;
+            color: var(--text-color);
+            font-family: "Courier Prime", monospace;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .setting-select:focus {
+            outline: none;
+            border-color: var(--highlight-color);
+            box-shadow: 0 0 8px rgba(255, 140, 66, 0.3);
         }
 
         .color-input {
             width: 50px;
-            height: 30px;
-            border: none;
-            border-radius: 4px;
+            height: 32px;
+            border: 2px solid var(--border-color);
+            border-radius: 2px;
             cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .color-input:hover {
+            border-color: var(--highlight-color);
+            box-shadow: 0 0 8px rgba(255, 140, 66, 0.3);
         }
 
         /* Prompter Mode */
@@ -194,6 +309,7 @@
             padding: 5vh 10vw;
             position: relative;
             overflow-y: auto;
+            background: #000000;
         }
 
         #prompter-container.active {
@@ -204,6 +320,9 @@
             max-height: 80vh;
             overflow-y: auto;
             padding-bottom: 40vh;
+            font-family: var(--font-family);
+            font-size: var(--font-size);
+            line-height: var(--line-height);
         }
 
         #script-display p {
@@ -228,7 +347,6 @@
 
         .script-line.current {
             color: var(--highlight-color);
-            font-weight: 600;
         }
 
         .script-line.future {
@@ -237,13 +355,12 @@
 
         .word {
             display: inline;
-            transition: color 0.1s ease;
+            transition: all 0.2s ease;
             cursor: pointer;
         }
 
         .word:hover {
-            text-decoration: underline;
-            text-underline-offset: 4px;
+            color: var(--highlight-color);
         }
 
         .word.spoken {
@@ -252,8 +369,6 @@
 
         .word.current {
             color: var(--highlight-color);
-            text-decoration: underline;
-            text-underline-offset: 4px;
         }
 
         /* Markdown styles for prompter */
@@ -264,21 +379,25 @@
         #script-display h5,
         #script-display h6 {
             margin: 0.3em 0;
-            font-weight: 600;
+            font-weight: 700;
+            font-family: "Oswald", sans-serif;
+            letter-spacing: 1px;
         }
 
-        #script-display h1 { font-size: 1.4em; }
-        #script-display h2 { font-size: 1.25em; }
-        #script-display h3 { font-size: 1.1em; }
+        #script-display h1 { font-size: 1.5em; color: var(--text-color); }
+        #script-display h2 { font-size: 1.3em; color: var(--text-color); }
+        #script-display h3 { font-size: 1.15em; }
 
         #script-display strong,
         #script-display b {
-            font-weight: 600;
+            font-weight: 700;
+            color: var(--text-color);
         }
 
         #script-display em,
         #script-display i {
             font-style: italic;
+            color: #FFA057;
         }
 
         #script-display ul,
@@ -292,171 +411,183 @@
         }
 
         #script-display blockquote {
-            border-left: 3px solid var(--highlight-color);
-            padding-left: 0.8em;
-            margin: 0.3em 0;
+            border-left: 4px solid var(--highlight-color);
+            padding-left: 1em;
+            margin: 0.5em 0;
             opacity: 0.9;
+            background: rgba(255, 140, 66, 0.05);
+            padding: 0.8em 1em;
         }
 
         #script-display code {
-            font-family: monospace;
-            background: rgba(255, 255, 255, 0.1);
-            padding: 0.1em 0.3em;
-            border-radius: 3px;
+            font-family: "Courier Prime", monospace;
+            background: rgba(255, 140, 66, 0.15);
+            padding: 0.2em 0.4em;
+            border-radius: 2px;
+            color: var(--highlight-color);
         }
 
         #script-display hr {
             border: none;
-            border-top: 1px solid var(--dim-color);
-            margin: 0.5em 0;
+            border-top: 2px solid var(--highlight-color);
+            margin: 1em 0;
+            opacity: 0.3;
         }
 
-        /* Progress bar */
+        /* Progress bar - analog VU meter style */
         #progress-bar {
             position: fixed;
             bottom: 0;
             left: 0;
-            height: 4px;
-            background: var(--highlight-color);
+            height: 6px;
+            background: linear-gradient(90deg,
+                var(--signal-green) 0%,
+                var(--highlight-color) 50%,
+                var(--signal-red) 100%);
             transition: width 0.2s ease;
-            opacity: 0.8;
+            box-shadow: 0 0 20px rgba(255, 140, 66, 0.6);
+            z-index: 10000;
         }
 
-        /* Status indicator */
+        #progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 20px;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5));
+            animation: glow 2s ease-in-out infinite;
+        }
+
+        /* Status indicator - broadcast style */
         #status {
             position: fixed;
-            top: 20px;
-            right: 20px;
-            font-family: "Inter", sans-serif;
-            font-size: 12px;
-            padding: 8px 14px;
-            background: rgba(0,0,0,0.7);
-            border-radius: 20px;
+            top: 24px;
+            right: 24px;
+            font-family: "Oswald", sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 12px 18px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid var(--border-color);
+            border-radius: 2px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #666;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+        }
+
+        .status-dot.listening {
+            background: var(--signal-green);
+            box-shadow: 0 0 10px var(--signal-green),
+                       0 0 20px rgba(46, 204, 113, 0.5),
+                       inset 0 1px 2px rgba(255, 255, 255, 0.3);
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-dot.backtrack {
+            background: var(--highlight-color);
+            box-shadow: 0 0 10px var(--highlight-color),
+                       0 0 20px rgba(255, 140, 66, 0.5);
+        }
+
+        /* Control buttons - broadcast panel style */
+        #exit-btn,
+        #transcript-btn,
+        #fullscreen-btn {
+            position: fixed;
+            top: 24px;
+            font-family: "Oswald", sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 12px 18px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid var(--border-color);
+            border-radius: 2px;
+            color: #AAA;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        #exit-btn {
+            left: 24px;
+        }
+
+        #transcript-btn {
+            left: 140px;
             display: flex;
             align-items: center;
             gap: 8px;
         }
 
-        .status-dot {
-            width: 8px;
-            height: 8px;
+        #fullscreen-btn {
+            left: 300px;
+        }
+
+        #exit-btn:hover,
+        #transcript-btn:hover,
+        #fullscreen-btn:hover {
+            border-color: var(--highlight-color);
+            color: var(--highlight-color);
+            background: rgba(255, 140, 66, 0.1);
+            box-shadow: 0 4px 20px rgba(255, 140, 66, 0.3),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        #transcript-btn.recording {
+            background: rgba(230, 57, 70, 0.2);
+            border-color: var(--signal-red);
+            color: var(--signal-red);
+        }
+
+        #transcript-btn.recording:hover {
+            background: rgba(230, 57, 70, 0.3);
+            box-shadow: 0 4px 20px rgba(230, 57, 70, 0.4);
+        }
+
+        .record-dot {
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
             background: #666;
         }
 
-        .status-dot.listening {
-            background: #4CAF50;
-            animation: pulse 1.5s infinite;
-        }
-
-        .status-dot.backtrack {
-            background: #FF9800;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        /* Exit button */
-        #exit-btn {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            font-family: "Inter", sans-serif;
-            font-size: 12px;
-            padding: 8px 14px;
-            background: rgba(255,255,255,0.1);
-            border: none;
-            border-radius: 20px;
-            color: #888;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        #exit-btn:hover {
-            background: rgba(255,255,255,0.2);
-            color: #fff;
-        }
-
-        /* Transcript toggle button */
-        #transcript-btn {
-            position: fixed;
-            top: 20px;
-            left: 100px;
-            font-family: "Inter", sans-serif;
-            font-size: 12px;
-            padding: 8px 14px;
-            background: rgba(255,255,255,0.1);
-            border: none;
-            border-radius: 20px;
-            color: #888;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        #transcript-btn:hover {
-            background: rgba(255,255,255,0.2);
-            color: #fff;
-        }
-
-        #transcript-btn.recording {
-            background: rgba(244, 67, 54, 0.3);
-            color: #f44336;
-        }
-
-        #transcript-btn.recording:hover {
-            background: rgba(244, 67, 54, 0.4);
-        }
-
-        .record-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #888;
-        }
-
         .record-dot.active {
-            background: #f44336;
+            background: var(--signal-red);
+            box-shadow: 0 0 10px var(--signal-red),
+                       0 0 20px rgba(230, 57, 70, 0.5);
             animation: pulse 1s infinite;
-        }
-
-        /* Fullscreen button */
-        #fullscreen-btn {
-            position: fixed;
-            top: 20px;
-            left: 200px;
-            font-family: "Inter", sans-serif;
-            font-size: 12px;
-            padding: 8px 14px;
-            background: rgba(255,255,255,0.1);
-            border: none;
-            border-radius: 20px;
-            color: #888;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        #fullscreen-btn:hover {
-            background: rgba(255,255,255,0.2);
-            color: #fff;
         }
 
         /* Transcript display */
         #transcript {
             position: fixed;
-            bottom: 20px;
-            left: 20px;
-            right: 20px;
-            font-family: "Inter", sans-serif;
-            font-size: 14px;
+            bottom: 30px;
+            left: 24px;
+            right: 24px;
+            font-family: "Courier Prime", monospace;
+            font-size: 13px;
             color: #666;
             text-align: center;
             max-height: 60px;
             overflow: hidden;
+            letter-spacing: 0.5px;
         }
 
         /* Loading spinner overlay */
@@ -467,12 +598,12 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(10, 10, 10, 0.95);
+            background: rgba(13, 13, 13, 0.98);
             z-index: 9999;
             justify-content: center;
             align-items: center;
             flex-direction: column;
-            gap: 24px;
+            gap: 32px;
         }
 
         #loading-overlay.visible {
@@ -480,12 +611,13 @@
         }
 
         .spinner {
-            width: 48px;
-            height: 48px;
-            border: 4px solid rgba(255, 215, 0, 0.2);
-            border-top-color: #FFD700;
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 140, 66, 0.2);
+            border-top-color: var(--highlight-color);
             border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+            animation: spin 1s linear infinite;
+            box-shadow: 0 0 20px rgba(255, 140, 66, 0.3);
         }
 
         @keyframes spin {
@@ -493,17 +625,40 @@
         }
 
         .loading-text {
-            font-family: "Inter", sans-serif;
-            font-size: 16px;
-            color: #aaa;
+            font-family: "Oswald", sans-serif;
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--highlight-color);
             text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
         }
 
         .loading-model {
-            font-family: "Inter", sans-serif;
-            font-size: 13px;
+            font-family: "Courier Prime", monospace;
+            font-size: 12px;
             color: #666;
             text-align: center;
+            letter-spacing: 1px;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 12px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0A0A0A;
+            border-left: 1px solid var(--border-color);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--highlight-color);
+            border: 2px solid #0A0A0A;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #FFA057;
         }
     </style>
 </head>
@@ -512,38 +667,40 @@
     <div id="editor-container">
         <div id="editor-panel">
             <div class="editor-header">
-                <span class="editor-title">Script (Markdown supported)</span>
-                <div style="display: flex; gap: 12px; align-items: center;">
-                    <select class="setting-select" id="sample-select" style="min-width: 180px;">
+                <span class="editor-title">◉ REC / Script Input</span>
+                <div style="display: flex; gap: 14px; align-items: center;">
+                    <select class="setting-select" id="sample-select" style="min-width: 200px;">
                         <option value="">Load sample script...</option>
                     </select>
-                    <button class="btn btn-primary" onclick="startPrompter()">Start Prompter</button>
+                    <button class="btn btn-primary" onclick="startPrompter()">▶ Start Broadcast</button>
                 </div>
             </div>
-            <textarea id="script-input" placeholder="Paste your script here...
+            <textarea id="script-input" placeholder="// PASTE YOUR SCRIPT HERE
 
 You can use **Markdown** formatting:
 - Headers with #
 - **Bold** and *italic*
 - Lists and paragraphs
 
-The prompter will track your speech and scroll automatically."></textarea>
+The prompter will track your speech and scroll automatically.
+
+Ready when you are."></textarea>
         </div>
 
         <div id="settings-panel">
             <div class="settings-section">
-                <div class="settings-title">Typography</div>
+                <div class="settings-title">⚡ Typography</div>
                 <div class="setting-row">
                     <span class="setting-label">Font Size</span>
                     <input type="number" class="setting-input" id="setting-fontSize" value="48" min="24" max="120">
                 </div>
                 <div class="setting-row">
                     <span class="setting-label">Font</span>
-                    <select class="setting-select" id="setting-fontFamily">
+                    <select class="setting-select" id="setting-fontFamily" style="width: 100%;">
+                        <option value='"Merriweather", Georgia, serif'>Merriweather</option>
                         <option value='"Crimson Pro", Georgia, serif'>Crimson Pro</option>
                         <option value='"Playfair Display", Georgia, serif'>Playfair Display</option>
                         <option value='Georgia, serif'>Georgia</option>
-                        <option value='"Inter", sans-serif'>Inter</option>
                         <option value='system-ui, sans-serif'>System</option>
                     </select>
                 </div>
@@ -554,7 +711,7 @@ The prompter will track your speech and scroll automatically."></textarea>
             </div>
 
             <div class="settings-section">
-                <div class="settings-title">Display</div>
+                <div class="settings-title">⚡ Display</div>
                 <div class="setting-row">
                     <span class="setting-label">Past Lines</span>
                     <input type="number" class="setting-input" id="setting-pastLines" value="1" min="0" max="5">
@@ -566,94 +723,94 @@ The prompter will track your speech and scroll automatically."></textarea>
             </div>
 
             <div class="settings-section">
-                <div class="settings-title">Recording</div>
+                <div class="settings-title">⚡ Recording</div>
                 <div class="setting-row">
                     <span class="setting-label">Save Transcript</span>
-                    <input type="checkbox" id="setting-saveTranscript" style="width: 18px; height: 18px; cursor: pointer;">
+                    <input type="checkbox" id="setting-saveTranscript" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--highlight-color);">
                 </div>
             </div>
 
             <div class="settings-section">
-                <div class="settings-title">Audio Device</div>
-                <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                <div class="settings-title">⚡ Audio Device</div>
+                <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 10px;">
                     <span class="setting-label">Input Device</span>
                     <select class="setting-select" id="audio-device-select" style="width: 100%;">
                         <option value="">Loading devices...</option>
                     </select>
-                    <span id="audio-device-status" style="font-family: 'Inter', sans-serif; font-size: 11px; color: #666;"></span>
+                    <span id="audio-device-status" style="font-family: 'Courier Prime', monospace; font-size: 10px; color: #666;"></span>
                 </div>
             </div>
 
             <div class="settings-section">
-                <div class="settings-title">Transcription</div>
-                <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                <div class="settings-title">⚡ Transcription</div>
+                <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 10px;">
                     <span class="setting-label">Provider</span>
                     <select class="setting-select" id="transcription-provider-select" style="width: 100%;">
                         <option value="vosk">Vosk</option>
                         <option value="sherpa">Sherpa-ONNX</option>
                     </select>
                 </div>
-                <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 12px;">
                     <span class="setting-label">Model</span>
                     <select class="setting-select" id="transcription-model-select" style="width: 100%;">
                         <option value="">Loading models...</option>
                     </select>
-                    <span id="transcription-status" style="font-family: 'Inter', sans-serif; font-size: 11px; color: #666;"></span>
-                    <div id="model-download-progress" style="display: none; width: 100%; margin-top: 8px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                            <span id="model-download-stage" style="font-family: 'Inter', sans-serif; font-size: 11px; color: #888;">Downloading...</span>
-                            <span id="model-download-percent" style="font-family: 'Inter', sans-serif; font-size: 11px; color: #888;">0%</span>
+                    <span id="transcription-status" style="font-family: 'Courier Prime', monospace; font-size: 10px; color: #666;"></span>
+                    <div id="model-download-progress" style="display: none; width: 100%; margin-top: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span id="model-download-stage" style="font-family: 'Courier Prime', monospace; font-size: 10px; color: #AAA;">Downloading...</span>
+                            <span id="model-download-percent" style="font-family: 'Courier Prime', monospace; font-size: 10px; color: var(--highlight-color); font-weight: 700;">0%</span>
                         </div>
-                        <div style="width: 100%; height: 4px; background: #333; border-radius: 2px; overflow: hidden;">
-                            <div id="model-download-bar" style="width: 0%; height: 100%; background: #4CAF50; transition: width 0.3s ease;"></div>
+                        <div style="width: 100%; height: 6px; background: #0A0A0A; border: 1px solid var(--border-color); border-radius: 2px; overflow: hidden;">
+                            <div id="model-download-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--signal-green), var(--highlight-color)); transition: width 0.3s ease; box-shadow: 0 0 10px rgba(255, 140, 66, 0.6);"></div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div class="settings-section">
-                <div class="settings-title">Colors</div>
+                <div class="settings-title">⚡ Colors</div>
                 <div class="setting-row">
                     <span class="setting-label">Highlight</span>
-                    <input type="color" class="color-input" id="setting-highlightColor" value="#FFD700">
+                    <input type="color" class="color-input" id="setting-highlightColor" value="#FF8C42">
                 </div>
                 <div class="setting-row">
                     <span class="setting-label">Text</span>
-                    <input type="color" class="color-input" id="setting-textColor" value="#FFFFFF">
+                    <input type="color" class="color-input" id="setting-textColor" value="#FFF8E7">
                 </div>
                 <div class="setting-row">
                     <span class="setting-label">Dim</span>
-                    <input type="color" class="color-input" id="setting-dimColor" value="#555555">
+                    <input type="color" class="color-input" id="setting-dimColor" value="#6B4423">
                 </div>
                 <div class="setting-row">
                     <span class="setting-label">Background</span>
-                    <input type="color" class="color-input" id="setting-backgroundColor" value="#0a0a0a">
+                    <input type="color" class="color-input" id="setting-backgroundColor" value="#0D0D0D">
                 </div>
             </div>
 
             <div class="settings-section">
-                <div class="settings-title">Keyboard Shortcuts</div>
+                <div class="settings-title">⚡ Keyboard Shortcuts</div>
                 <div class="setting-row">
-                    <span class="setting-label" style="color: #666;">Escape</span>
+                    <span class="setting-label" style="color: var(--highlight-color); font-weight: 700;">[ESC]</span>
                     <span class="setting-label">Exit prompter</span>
                 </div>
                 <div class="setting-row">
-                    <span class="setting-label" style="color: #666;">Space</span>
+                    <span class="setting-label" style="color: var(--highlight-color); font-weight: 700;">[SPACE]</span>
                     <span class="setting-label">Pause/Resume</span>
                 </div>
                 <div class="setting-row">
-                    <span class="setting-label" style="color: #666;">R</span>
+                    <span class="setting-label" style="color: var(--highlight-color); font-weight: 700;">[R]</span>
                     <span class="setting-label">Reset to start</span>
                 </div>
                 <div class="setting-row">
-                    <span class="setting-label" style="color: #666;">F</span>
+                    <span class="setting-label" style="color: var(--highlight-color); font-weight: 700;">[F]</span>
                     <span class="setting-label">Toggle fullscreen</span>
                 </div>
             </div>
 
             <div class="settings-section">
-                <button class="btn btn-secondary" id="save-config-btn" onclick="saveConfig()" style="width: 100%;">Save as Default</button>
-                <div id="save-status" style="font-family: 'Inter', sans-serif; font-size: 12px; color: #666; margin-top: 8px; text-align: center;"></div>
+                <button class="btn btn-secondary" id="save-config-btn" onclick="saveConfig()" style="width: 100%;">💾 Save as Default</button>
+                <div id="save-status" style="font-family: 'Courier Prime', monospace; font-size: 11px; color: #666; margin-top: 12px; text-align: center;"></div>
             </div>
         </div>
     </div>
@@ -664,39 +821,38 @@ The prompter will track your speech and scroll automatically."></textarea>
         <div id="progress-bar" style="width: 0%"></div>
         <div id="status">
             <span class="status-dot listening"></span>
-            <span id="status-text">Listening...</span>
+            <span id="status-text">On Air</span>
         </div>
-        <button id="exit-btn" onclick="exitPrompter()">← Exit</button>
+        <button id="exit-btn" onclick="exitPrompter()">◼ Stop</button>
         <button id="transcript-btn" onclick="toggleTranscript()">
             <span class="record-dot"></span>
             <span id="transcript-btn-text">Transcribe</span>
         </button>
-        <button id="fullscreen-btn" onclick="toggleFullscreen()">Fullscreen</button>
+        <button id="fullscreen-btn" onclick="toggleFullscreen()">⛶ Full</button>
         <div id="transcript"></div>
     </div>
 
     <!-- Loading Overlay -->
     <div id="loading-overlay">
         <div class="spinner"></div>
-        <div class="loading-text">Loading transcription model...</div>
+        <div class="loading-text">◉ Loading Model...</div>
         <div class="loading-model" id="loading-model-name"></div>
     </div>
 
     <script>
         let ws = null;
-        let totalWords = 0;  // Set by server
+        let totalWords = 0;
         let currentWordIndex = 0;
         let settings = {};
         let isPaused = false;
-        let scriptHtml = '';  // Pre-indexed HTML from server
-        let isRecordingTranscript = false;  // Transcript recording state
-        let audioDevices = [];  // Available audio devices
-        let currentAudioDevice = null;  // Currently selected audio device index
-        let transcriptionModels = [];  // Available transcription models
-        let currentTranscriptionConfig = null;  // Current transcription configuration
-        let waitingForModelLoad = false;  // Track if we're waiting for model to load
+        let scriptHtml = '';  // Server-generated HTML with word indices (trusted source)
+        let isRecordingTranscript = false;
+        let audioDevices = [];
+        let currentAudioDevice = null;
+        let transcriptionModels = [];
+        let currentTranscriptionConfig = null;
+        let waitingForModelLoad = false;
 
-        // Connect WebSocket
         function connect() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
@@ -722,13 +878,9 @@ The prompter will track your speech and scroll automatically."></textarea>
                     totalWords = data.totalWords || 0;
                     settings = data.settings || {};
                     applySettings(settings);
-                    // Populate sample scripts dropdown
                     populateSamples(data.samples || []);
-                    // Store current audio device
                     currentAudioDevice = data.audioDevice;
-                    // Fetch and populate audio devices
                     fetchAudioDevices();
-                    // Store transcription config and fetch models
                     currentTranscriptionConfig = data.transcriptionConfig;
                     if (currentTranscriptionConfig) {
                         document.getElementById('transcription-provider-select').value = currentTranscriptionConfig.provider;
@@ -740,8 +892,6 @@ The prompter will track your speech and scroll automatically."></textarea>
                     document.getElementById('script-input').value = data.script;
                     scriptHtml = data.scriptHtml || '';
                     totalWords = data.totalWords || 0;
-                    // If we were waiting to start the prompter, activate it now
-                    // (unless we're waiting for the model to load)
                     if (waitingForScript && !waitingForModelLoad) {
                         waitingForScript = false;
                         activatePrompterMode();
@@ -768,11 +918,11 @@ The prompter will track your speech and scroll automatically."></textarea>
                 case 'config_saved': {
                         const statusEl = document.getElementById('save-status');
                         if (data.success) {
-                            statusEl.textContent = 'Settings saved!';
-                            statusEl.style.color = '#4CAF50';
+                            statusEl.textContent = '✓ SETTINGS SAVED';
+                            statusEl.style.color = 'var(--signal-green)';
                         } else {
-                            statusEl.textContent = 'Failed to save: ' + (data.error || 'Unknown error');
-                            statusEl.style.color = '#f44336';
+                            statusEl.textContent = '✗ ERROR: ' + (data.error || 'Unknown error');
+                            statusEl.style.color = 'var(--signal-red)';
                         }
                         setTimeout(() => { statusEl.textContent = ''; }, 3000);
                     }
@@ -786,11 +936,11 @@ The prompter will track your speech and scroll automatically."></textarea>
                         const statusEl = document.getElementById('audio-device-status');
                         if (data.success) {
                             currentAudioDevice = data.deviceIndex;
-                            statusEl.textContent = 'Device updated. Restart prompter to use new device.';
-                            statusEl.style.color = '#4CAF50';
+                            statusEl.textContent = '✓ Device updated. Restart prompter.';
+                            statusEl.style.color = 'var(--signal-green)';
                         } else {
-                            statusEl.textContent = 'Failed to update: ' + (data.error || 'Unknown error');
-                            statusEl.style.color = '#f44336';
+                            statusEl.textContent = '✗ Failed: ' + (data.error || 'Unknown error');
+                            statusEl.style.color = 'var(--signal-red)';
                         }
                         setTimeout(() => { statusEl.textContent = ''; }, 5000);
                     }
@@ -805,11 +955,11 @@ The prompter will track your speech and scroll automatically."></textarea>
                 case 'transcription_config_updated': {
                         const statusEl = document.getElementById('transcription-status');
                         if (data.success) {
-                            statusEl.textContent = data.message || 'Settings saved. Stop and start prompting to apply.';
-                            statusEl.style.color = '#4CAF50';
+                            statusEl.textContent = data.message || '✓ Saved. Restart to apply.';
+                            statusEl.style.color = 'var(--signal-green)';
                         } else {
-                            statusEl.textContent = data.error || 'Failed to save settings';
-                            statusEl.style.color = '#f44336';
+                            statusEl.textContent = data.error || '✗ Failed to save';
+                            statusEl.style.color = 'var(--signal-red)';
                         }
                         setTimeout(() => { statusEl.textContent = ''; }, 5000);
                     }
@@ -864,10 +1014,8 @@ The prompter will track your speech and scroll automatically."></textarea>
 
         function toggleFullscreen() {
             const prompter = document.getElementById('prompter-container');
-            const btn = document.getElementById('fullscreen-btn');
 
             if (!document.fullscreenElement) {
-                // Enter fullscreen
                 if (prompter.requestFullscreen) {
                     prompter.requestFullscreen();
                 } else if (prompter.webkitRequestFullscreen) {
@@ -876,7 +1024,6 @@ The prompter will track your speech and scroll automatically."></textarea>
                     prompter.msRequestFullscreen();
                 }
             } else {
-                // Exit fullscreen
                 if (document.exitFullscreen) {
                     document.exitFullscreen();
                 } else if (document.webkitExitFullscreen) {
@@ -887,7 +1034,6 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
         }
 
-        // Update fullscreen button text when fullscreen state changes
         document.addEventListener('fullscreenchange', updateFullscreenButton);
         document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
         document.addEventListener('msfullscreenchange', updateFullscreenButton);
@@ -895,9 +1041,9 @@ The prompter will track your speech and scroll automatically."></textarea>
         function updateFullscreenButton() {
             const btn = document.getElementById('fullscreen-btn');
             if (document.fullscreenElement) {
-                btn.textContent = 'Exit Fullscreen';
+                btn.textContent = '⛶ Exit';
             } else {
-                btn.textContent = 'Fullscreen';
+                btn.textContent = '⛶ Full';
             }
         }
 
@@ -911,7 +1057,6 @@ The prompter will track your speech and scroll automatically."></textarea>
             root.style.setProperty('--dim-color', s.dimColor);
             root.style.setProperty('--bg-color', s.backgroundColor);
 
-            // Update input values
             for (const [key, value] of Object.entries(s)) {
                 const el = document.getElementById('setting-' + key);
                 if (el) el.value = value;
@@ -935,13 +1080,12 @@ The prompter will track your speech and scroll automatically."></textarea>
         function saveConfig() {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 const statusEl = document.getElementById('save-status');
-                statusEl.textContent = 'Saving...';
+                statusEl.textContent = '⟳ SAVING...';
                 statusEl.style.color = '#666';
                 ws.send(JSON.stringify({ type: 'save_config' }));
             }
         }
 
-        // Flag to indicate we're waiting for server to send indexed HTML
         let waitingForScript = false;
 
         function startPrompter() {
@@ -951,37 +1095,27 @@ The prompter will track your speech and scroll automatically."></textarea>
                 return;
             }
 
-            // Send script and settings to server
-            // The server will respond with indexed HTML in script_updated message
             settings = getSettings();
             waitingForScript = true;
 
-            // Get transcript preference
             const saveTranscript = document.getElementById('setting-saveTranscript').checked;
 
-            // Send script to load it (without saveTranscript, as we'll send start_prompting separately)
             ws.send(JSON.stringify({ type: 'script', text: script }));
             ws.send(JSON.stringify({ type: 'settings', settings: settings }));
-
-            // Send start_prompting to initialize audio and transcriber
             ws.send(JSON.stringify({ type: 'start_prompting', saveTranscript: saveTranscript }));
         }
 
         function activatePrompterMode() {
-            // Switch to prompter mode
             document.getElementById('editor-container').classList.add('hidden');
             document.getElementById('prompter-container').classList.add('active');
 
-            // Initial render using server-provided indexed HTML
             currentWordIndex = 0;
             renderScriptByWordIndex(0);
 
-            // Apply settings
             applySettings(settings);
         }
 
         function exitPrompter() {
-            // Send stop_prompting to cleanup audio and transcriber
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'stop_prompting' }));
             }
@@ -993,10 +1127,9 @@ The prompter will track your speech and scroll automatically."></textarea>
         function renderScriptByWordIndex(wordIndex) {
             const display = document.getElementById('script-display');
 
-            // Render the pre-indexed HTML from server
+            // Note: scriptHtml comes from trusted server-side processing of user's own script
             display.innerHTML = scriptHtml;
 
-            // Update word styling based on current position
             display.querySelectorAll('.word').forEach(el => {
                 const wordIdx = parseInt(el.dataset.wordIndex, 10);
                 el.classList.remove('spoken', 'current');
@@ -1007,11 +1140,9 @@ The prompter will track your speech and scroll automatically."></textarea>
                     el.classList.add('current');
                 }
 
-                // Add click handler
                 el.addEventListener('click', handleWordClick);
             });
 
-            // Scroll the current word into view
             const currentEl = display.querySelector('.word.current');
             if (currentEl) {
                 currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1029,7 +1160,6 @@ The prompter will track your speech and scroll automatically."></textarea>
             currentWordIndex = wordIndex;
             renderScriptByWordIndex(wordIndex);
 
-            // Update progress bar
             const progress = totalWords > 0 ? (wordIndex / totalWords) * 100 : 0;
             document.getElementById('progress-bar').style.width = progress + '%';
         }
@@ -1037,12 +1167,9 @@ The prompter will track your speech and scroll automatically."></textarea>
         function updatePosition(data) {
             if (isPaused) return;
 
-            // Use wordIndex directly - no line/offset conversion needed
-            // since we use server-provided word indices in the HTML
             currentWordIndex = data.wordIndex;
             renderScriptByWordIndex(data.wordIndex);
 
-            // Report what word we're highlighting back to server for debugging
             const currentEl = document.querySelector('.word.current');
             if (currentEl && ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
@@ -1055,29 +1182,26 @@ The prompter will track your speech and scroll automatically."></textarea>
                 }));
             }
 
-            // Update progress bar
             const progress = totalWords > 0 ? (data.wordIndex / totalWords) * 100 : 0;
             document.getElementById('progress-bar').style.width = progress + '%';
 
-            // Update status
             const dot = document.querySelector('.status-dot');
             const statusText = document.getElementById('status-text');
 
             if (data.isBacktrack) {
                 dot.className = 'status-dot backtrack';
-                statusText.textContent = 'Backtrack detected';
+                statusText.textContent = 'Rewind';
                 setTimeout(() => {
                     dot.className = 'status-dot listening';
-                    statusText.textContent = 'Listening...';
+                    statusText.textContent = 'On Air';
                 }, 1000);
             } else if (data.confidence > 70) {
                 dot.className = 'status-dot listening';
-                statusText.textContent = 'Listening...';
+                statusText.textContent = 'On Air';
             }
 
-            // Show transcript
             if (data.transcript) {
-                document.getElementById('transcript').textContent = data.transcript;
+                document.getElementById('transcript').textContent = '> ' + data.transcript;
             }
         }
 
@@ -1087,7 +1211,6 @@ The prompter will track your speech and scroll automatically."></textarea>
             document.getElementById('progress-bar').style.width = '0%';
         }
 
-        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (!document.getElementById('prompter-container').classList.contains('active')) {
                 return;
@@ -1100,7 +1223,7 @@ The prompter will track your speech and scroll automatically."></textarea>
                 case ' ':
                     e.preventDefault();
                     isPaused = !isPaused;
-                    document.getElementById('status-text').textContent = isPaused ? 'Paused' : 'Listening...';
+                    document.getElementById('status-text').textContent = isPaused ? 'Paused' : 'On Air';
                     break;
                 case 'r':
                 case 'R':
@@ -1114,14 +1237,11 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
         });
 
-        // Populate sample scripts dropdown
         function populateSamples(samples) {
             const select = document.getElementById('sample-select');
-            // Clear existing options except the first placeholder
             while (select.options.length > 1) {
                 select.remove(1);
             }
-            // Add sample options
             samples.forEach(sample => {
                 const option = document.createElement('option');
                 option.value = sample.filename;
@@ -1130,17 +1250,14 @@ The prompter will track your speech and scroll automatically."></textarea>
             });
         }
 
-        // Sample script selection handler
         document.getElementById('sample-select').addEventListener('change', (e) => {
             const filename = e.target.value;
             if (filename && ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'load_sample', filename: filename }));
             }
-            // Reset dropdown to placeholder
             e.target.value = '';
         });
 
-        // Fetch audio devices from backend
         async function fetchAudioDevices() {
             try {
                 const response = await fetch('/audio-devices');
@@ -1158,18 +1275,15 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
         }
 
-        // Populate audio devices dropdown
         function populateAudioDevices() {
             const select = document.getElementById('audio-device-select');
             select.innerHTML = '';
 
-            // Add default option
             const defaultOption = document.createElement('option');
             defaultOption.value = '';
             defaultOption.textContent = 'System Default';
             select.appendChild(defaultOption);
 
-            // Add device options
             audioDevices.forEach(device => {
                 const option = document.createElement('option');
                 option.value = device.index;
@@ -1177,7 +1291,6 @@ The prompter will track your speech and scroll automatically."></textarea>
                 select.appendChild(option);
             });
 
-            // Set current selection
             if (currentAudioDevice !== null && currentAudioDevice !== undefined) {
                 select.value = currentAudioDevice;
             } else {
@@ -1185,7 +1298,6 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
         }
 
-        // Audio device selection handler
         document.getElementById('audio-device-select').addEventListener('change', (e) => {
             const deviceIndex = e.target.value === '' ? null : parseInt(e.target.value);
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1196,14 +1308,12 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
         });
 
-        // Fetch transcription models from backend
         function fetchTranscriptionModels() {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'get_transcription_models' }));
             }
         }
 
-        // Populate transcription model dropdown based on selected provider
         function populateTranscriptionModels(provider) {
             const select = document.getElementById('transcription-model-select');
             select.innerHTML = '';
@@ -1224,7 +1334,6 @@ The prompter will track your speech and scroll automatically."></textarea>
                 select.appendChild(option);
             });
 
-            // Select current model if available
             if (currentTranscriptionConfig && currentTranscriptionConfig.provider === provider) {
                 select.value = currentTranscriptionConfig.model_id;
             } else if (filtered.length > 0) {
@@ -1232,18 +1341,15 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
         }
 
-        // Transcription provider selection handler
         document.getElementById('transcription-provider-select').addEventListener('change', (e) => {
             populateTranscriptionModels(e.target.value);
         });
 
-        // Transcription model selection handler
         document.getElementById('transcription-model-select').addEventListener('change', (e) => {
             const provider = document.getElementById('transcription-provider-select').value;
             const modelId = e.target.value;
 
             if (ws && ws.readyState === WebSocket.OPEN) {
-                // First check if model is downloaded
                 ws.send(JSON.stringify({
                     type: 'check_model_downloaded',
                     provider: provider,
@@ -1252,14 +1358,12 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
         });
 
-        // Handle model download status check
         function handleModelDownloadStatus(data) {
             const provider = data.provider;
             const modelId = data.modelId;
             const downloaded = data.downloaded;
 
             if (downloaded) {
-                // Model is already downloaded, just save the config
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'set_transcription_config',
@@ -1268,12 +1372,10 @@ The prompter will track your speech and scroll automatically."></textarea>
                     }));
                 }
             } else {
-                // Model not downloaded, start download automatically
                 const statusEl = document.getElementById('transcription-status');
-                statusEl.textContent = 'Model not downloaded. Starting download...';
-                statusEl.style.color = '#FFA500';
+                statusEl.textContent = '⟳ Downloading model...';
+                statusEl.style.color = 'var(--highlight-color)';
 
-                // Start download
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'download_model',
@@ -1282,17 +1384,14 @@ The prompter will track your speech and scroll automatically."></textarea>
                     }));
                 }
 
-                // Show progress bar
                 showModelDownloadProgress();
             }
         }
 
-        // Handle model download progress updates
         function handleModelDownloadProgress(data) {
             const stage = data.stage;
             const percent = data.percent;
 
-            // Update progress bar
             const progressContainer = document.getElementById('model-download-progress');
             const stageEl = document.getElementById('model-download-stage');
             const percentEl = document.getElementById('model-download-percent');
@@ -1300,32 +1399,28 @@ The prompter will track your speech and scroll automatically."></textarea>
 
             progressContainer.style.display = 'block';
 
-            // Update stage text
             const stageText = {
-                'starting': 'Starting download...',
-                'downloading': 'Downloading model...',
-                'extracting': 'Extracting files...',
-                'complete': 'Complete'
+                'starting': '⟳ Starting...',
+                'downloading': '⬇ Downloading...',
+                'extracting': '📦 Extracting...',
+                'complete': '✓ Complete'
             };
             stageEl.textContent = stageText[stage] || stage;
             percentEl.textContent = percent + '%';
             barEl.style.width = percent + '%';
         }
 
-        // Handle model download completion
         function handleModelDownloadComplete(data) {
             const statusEl = document.getElementById('transcription-status');
 
             if (data.success) {
-                statusEl.textContent = data.message || 'Model downloaded. Restart prompter to use it.';
-                statusEl.style.color = '#4CAF50';
+                statusEl.textContent = data.message || '✓ Downloaded. Restart to use.';
+                statusEl.style.color = 'var(--signal-green)';
 
-                // Hide progress bar after a delay
                 setTimeout(() => {
                     hideModelDownloadProgress();
                 }, 2000);
 
-                // Save the config now that model is downloaded
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'set_transcription_config',
@@ -1334,48 +1429,42 @@ The prompter will track your speech and scroll automatically."></textarea>
                     }));
                 }
             } else {
-                statusEl.textContent = 'Download failed: ' + (data.error || 'Unknown error');
-                statusEl.style.color = '#f44336';
+                statusEl.textContent = '✗ Download failed: ' + (data.error || 'Unknown');
+                statusEl.style.color = 'var(--signal-red)';
                 hideModelDownloadProgress();
             }
 
             setTimeout(() => {
-                if (statusEl.textContent.includes('Restart prompter')) {
+                if (statusEl.textContent.includes('Restart')) {
                     statusEl.textContent = '';
                 }
             }, 10000);
         }
 
-        // Show model download progress bar
         function showModelDownloadProgress() {
             const progressContainer = document.getElementById('model-download-progress');
             progressContainer.style.display = 'block';
-            document.getElementById('model-download-stage').textContent = 'Starting...';
+            document.getElementById('model-download-stage').textContent = '⟳ Starting...';
             document.getElementById('model-download-percent').textContent = '0%';
             document.getElementById('model-download-bar').style.width = '0%';
         }
 
-        // Hide model download progress bar
         function hideModelDownloadProgress() {
             const progressContainer = document.getElementById('model-download-progress');
             progressContainer.style.display = 'none';
         }
 
-        // Handle model loading status
         function handleModelLoadingStatus(data) {
             const overlay = document.getElementById('loading-overlay');
             const modelNameEl = document.getElementById('loading-model-name');
 
             if (data.status === 'loading') {
-                // Show loading spinner
                 waitingForModelLoad = true;
-                modelNameEl.textContent = `${data.provider}: ${data.modelId}`;
+                modelNameEl.textContent = `${data.provider} / ${data.modelId}`;
                 overlay.classList.add('visible');
             } else if (data.status === 'ready') {
-                // Hide loading spinner and activate prompter
                 waitingForModelLoad = false;
                 overlay.classList.remove('visible');
-                // Now that model is ready, activate the prompter if we were waiting
                 if (waitingForScript) {
                     waitingForScript = false;
                     activatePrompterMode();
@@ -1383,9 +1472,7 @@ The prompter will track your speech and scroll automatically."></textarea>
             }
         }
 
-        // Settings change handlers
         document.querySelectorAll('#settings-panel input, #settings-panel select').forEach(el => {
-            // Skip elements with their own handlers
             if (el.id === 'setting-saveTranscript' ||
                 el.id === 'audio-device-select' ||
                 el.id === 'transcription-provider-select' ||
@@ -1400,13 +1487,10 @@ The prompter will track your speech and scroll automatically."></textarea>
             });
         });
 
-        // Transcript checkbox handler - just stores the preference locally
-        // Recording will start when the prompter is started
         document.getElementById('setting-saveTranscript').addEventListener('change', (e) => {
-            // No immediate action - preference is read when prompter starts
+            // Preference is read when prompter starts
         });
 
-        // Initialize
         connect();
     </script>
 </body>
