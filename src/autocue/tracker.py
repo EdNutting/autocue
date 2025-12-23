@@ -9,6 +9,7 @@ detects when the speaker backtracks to restart a sentence.
 """
 
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass, field
 
 import markdown
@@ -196,6 +197,13 @@ class ScriptTracker:
 
         # Track last partial to avoid reprocessing
         self.last_partial_transcription: str = ""
+
+        # Cache for fuzzy matching results (Phase 2 optimization)
+        # Key: (spoken_words, current_word_index)
+        # Value: (best_index, best_score)
+        # Using OrderedDict for LRU behavior
+        self._match_cache: OrderedDict[tuple[str, int], tuple[int, float]] = OrderedDict()
+        self._match_cache_maxsize: int = 128
 
     # Property accessors for expansion state (delegated to ExpansionMatcher)
     @property
@@ -537,6 +545,8 @@ class ScriptTracker:
         self.last_partial_transcription = ""
         # Reset expansion state
         self.clear_expansion_state()
+        # Clear match cache (Phase 2 optimization)
+        self._match_cache.clear()
 
     def jump_to(self, word_index: int) -> None:
         """Jump to a specific position in the script."""
@@ -549,6 +559,7 @@ class ScriptTracker:
         self.committed_state.optimistic_position = word_index
         self.committed_display_position = word_index
         self.speculative_display_position = word_index
+        # Note: reset() already clears the match cache
 
     def get_display_lines(
         self,
@@ -1037,6 +1048,13 @@ class ScriptTracker:
         if not spoken_words.strip():
             return self.current_word_index, 0.0
 
+        # Check cache first (Phase 2 optimization)
+        cache_key = (spoken_words, self.current_word_index)
+        if cache_key in self._match_cache:
+            # Move to end for LRU behavior
+            self._match_cache.move_to_end(cache_key)
+            return self._match_cache[cache_key]
+
         # Normalize spoken words
         spoken_normalized: str = ' '.join(
             self._normalize_word(w) for w in spoken_words.split() if w.strip()
@@ -1090,7 +1108,16 @@ class ScriptTracker:
                 best_score = score
                 best_index = i
 
-        return best_index, best_score
+        # Store in cache (Phase 2 optimization)
+        result = (best_index, best_score)
+        self._match_cache[cache_key] = result
+
+        # Maintain cache size (LRU eviction)
+        if len(self._match_cache) > self._match_cache_maxsize:
+            # Remove oldest entry (first item)
+            self._match_cache.popitem(last=False)
+
+        return result
 
     def _transcript_matches_position(self, transcript_words: list[str], position: int) -> bool:
         """

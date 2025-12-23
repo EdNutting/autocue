@@ -14,6 +14,7 @@ punctuation is spoken aloud (e.g., "&" as "and", "<" as "less than").
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from html.parser import HTMLParser
 
 from .number_expander import get_number_expansions, is_number_token
@@ -124,10 +125,12 @@ class ParsedScript:
         return self.raw_tokens[raw_idx]
 
 
+@lru_cache(maxsize=512)
 def normalize_word(word: str) -> str:
     """Normalize a word for matching (lowercase, strip punctuation).
 
     This is used for comparing spoken words to script words.
+    Cached with LRU cache (maxsize=512) for performance.
     """
     return re.sub(r'[^\w\s]', '', word.lower()).strip()
 

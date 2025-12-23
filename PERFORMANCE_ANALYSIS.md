@@ -163,11 +163,23 @@ if is_partial and time_since_last_partial < 0.05:
 
 ### Phase 2: Caching (2-3 hours)
 
-1. ⏭️ Add LRU cache to fuzzy matching
-2. ⏭️ Cache normalized words
-3. ⏭️ Profile again to measure improvement
+1. ✅ Add LRU cache to fuzzy matching
+2. ✅ Cache normalized words
+3. ✅ Profile again to measure improvement
 
 **Expected Result**: Overall 30% speedup
+
+**Implementation Details**:
+
+- Added `@lru_cache(maxsize=512)` to `normalize_word()` in [script_parser.py](src/autocue/script_parser.py:128)
+- Implemented instance-level LRU cache for `_find_best_match()` in [tracker.py](src/autocue/tracker.py:1035)
+    - Cache key: `(spoken_words, current_word_index)`
+    - Max cache size: 128 entries
+    - Automatic LRU eviction when maxsize exceeded
+    - Cache cleared on `reset()` and `jump_to()` operations
+- Added comprehensive test suite in [tests/tracker/test_caching.py](tests/tracker/test_caching.py)
+    - 12 tests covering cache initialization, storage, reuse, eviction, and integration
+    - All tests passing with no regressions in existing test suite (135 tests)
 
 ### Phase 3: Architecture (1 day)
 
