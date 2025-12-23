@@ -89,6 +89,9 @@ class AutocueApp:
         self._last_sent_line_index: int | None = None
         self._last_sent_word_offset: int | None = None
 
+        # Cache latest transcript for UI display
+        self._latest_transcript: str = ""
+
     def write_transcript(self, text: str, is_partial: bool) -> None:
         """Write recognized text to the transcript file."""
         if not self.save_transcript or not self.transcript_file:
@@ -368,6 +371,9 @@ class AutocueApp:
                         # Save transcript if enabled
                         self.write_transcript(result.text, result.is_partial)
 
+                        # Cache latest transcript for UI display
+                        self._latest_transcript = result.text
+
                         # Submit transcription to tracker (non-blocking)
                         # Phase 3: This no longer blocks!
                         self.tracker.submit_transcription(
@@ -398,7 +404,7 @@ class AutocueApp:
                             word_offset=word_offset,
                             confidence=position.confidence,
                             is_backtrack=position.is_jump,
-                            transcript=""
+                            transcript=self._latest_transcript
                         )
 
                         # Update last sent position
