@@ -17,6 +17,7 @@ class TestValidationTriggering:
         tracker: ScriptTracker = ScriptTracker(
             "one two three four five six seven eight")
 
+        tracker.jump_threshold = 5
         assert tracker.allow_jump_detection is False
 
         # Speak 4 words - no validation yet

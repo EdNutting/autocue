@@ -375,7 +375,8 @@ class ScriptTracker:
 
         # Add all words from the partial transcript to speculative state
         partial_words = [w for w in transcription.split() if w.strip()]
-        logger.debug(f"Partial: Queuing {len(partial_words)} words from partial")
+        logger.debug(
+            f"Partial: Queuing {len(partial_words)} words from partial")
         for word in partial_words:
             speculative_state.word_queue.append(word)
 
@@ -384,8 +385,9 @@ class ScriptTracker:
             self._expansion_matcher = speculative_state.expansion_matcher
 
         # Process words speculatively (don't update validation counter)
+        # Use reduced skip distance for partials (performance optimization)
         self._process_words(
-            speculative_state, self.max_skip_distance, update_validation_counter=False)
+            speculative_state, 1, update_validation_counter=False)
 
         # If words remain unmatched, try recovery by dropping words one at a time
         # This helps recover from single misheard/misspoken words in partial results
@@ -396,12 +398,14 @@ class ScriptTracker:
 
             # Drop the first unmatched word and try again
             dropped_word = speculative_state.word_queue.pop(0)
-            logger.debug(f"Partial: Dropping word '{dropped_word}' and retrying")
+            logger.debug(
+                f"Partial: Dropping word '{dropped_word}' and retrying")
 
             # Try processing remaining words
             if speculative_state.word_queue:
+                # Use reduced skip distance for partials (performance optimization)
                 self._process_words(
-                    speculative_state, self.max_skip_distance, update_validation_counter=False)
+                    speculative_state, 1, update_validation_counter=False)
 
                 # If we made progress (queue got shorter), keep trying
                 if len(speculative_state.word_queue) < initial_queue_len - 1:
@@ -598,7 +602,8 @@ class ScriptTracker:
 
             # Try to advance optimistically based on new words
             spoken_word = state.word_queue.pop(0)
-            logger.debug(f"Exact-match detection: Testing word '{spoken_word}'")
+            logger.debug(
+                f"Exact-match detection: Testing word '{spoken_word}'")
             match_result = self._match_single_word(spoken_word, state)
 
             if match_result.matched:
@@ -632,11 +637,13 @@ class ScriptTracker:
                     if update_validation_counter:
                         self.words_since_validation += match_result.advances
                 # Else check for backtrack / forward jump
-                elif len(state.word_queue) >= 5:  # allow_jump_detection
+                # Skip jump detection for partial updates (performance optimization)
+                # allow_jump_detection
+                elif len(state.word_queue) >= self.jump_threshold and update_validation_counter:
                     # No words matched - this could indicate a backtrack or forward jump!
                     # Immediately validate if we have enough new words to work with
                     _, is_jump = self._detect_jump_internal(state)
-                    if update_validation_counter and is_jump:
+                    if is_jump:
                         self.last_update_was_jump = True
 
     @profile_function("tracker._match_single_word")
@@ -899,7 +906,8 @@ class ScriptTracker:
         # If they do, trust the optimistic position.
         transcript_words = [w for w in transcription.split() if w.strip()]
         if self._transcript_matches_position(transcript_words, state.optimistic_position):
-            logger.debug("Jump detection: Skipping (transcript matches current position)")
+            logger.debug(
+                "Jump detection: Skipping (transcript matches current position)")
             return state.optimistic_position, False
 
         # Reject jumps that are too large - prevents jumping to similar sentences
@@ -961,7 +969,8 @@ class ScriptTracker:
 
         # Disable skip logic temporarily after a backtrack to prevent stale word matching
         if is_backtrack:
-            logger.debug("Jump detection: Disabling skip logic for next 3 matches")
+            logger.debug(
+                "Jump detection: Disabling skip logic for next 3 matches")
             self.skip_disabled_count = 3
 
         # Clear expansion state - we're at a new position
@@ -1145,7 +1154,7 @@ class ScriptTracker:
         For compatibility with tests. Returns True when we have accumulated
         enough new words since last validation to trigger jump detection.
         """
-        return self.words_since_validation >= 5
+        return self.words_since_validation >= self.jump_threshold
 
     @property
     def progress(self) -> float:

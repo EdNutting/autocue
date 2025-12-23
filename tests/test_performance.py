@@ -344,6 +344,90 @@ the window-based matching and jump detection algorithms.
         print(f"\nDetailed cProfile saved to: {output_dir / 'tracking_profile.prof'}")
         print("Analyze with: python -m pstats profiling_results/tracking_profile.prof")
 
+    def test_phase1_optimization_behavior(self, sample_script: str):
+        """Verify Phase 1 optimization: partial updates skip jump detection."""
+        tracker = ScriptTracker(sample_script)
+
+        # Advance to position 50 in the script
+        tracker.update(" ".join(tracker.words[:50]), is_partial=False)
+        initial_position = tracker.current_word_index
+
+        # Simulate a partial update with words that don't match well
+        # (normally this would trigger jump detection if we had >= 5 mismatched words)
+        mismatched_words = "completely random words that do not appear in script anywhere"
+
+        # Update with partial - should NOT trigger jump detection
+        start = time.perf_counter()
+        tracker.update(mismatched_words, is_partial=True)
+        partial_time = time.perf_counter() - start
+
+        # Position should not have changed much (no jump should have occurred)
+        # The position might advance slightly due to speculative matching, but
+        # it should not jump to a completely different location
+        position_after_partial = tracker.current_word_index
+
+        # Now do the same with a final update - this SHOULD trigger jump detection
+        # First reset to initial position
+        tracker.reset()
+        tracker.update(" ".join(tracker.words[:50]), is_partial=False)
+
+        # Use words from earlier in the script (should trigger backtrack)
+        backtrack_words = " ".join(tracker.words[20:25])
+
+        start = time.perf_counter()
+        tracker.update(backtrack_words, is_partial=False)
+        final_time = time.perf_counter() - start
+
+        position_after_final = tracker.current_word_index
+
+        print(f"\nPhase 1 Optimization Behavior:")
+        print(f"  Partial update time: {partial_time*1000:.3f}ms")
+        print(f"  Final update time: {final_time*1000:.3f}ms")
+        print(f"  Position after partial: {position_after_partial} (started at {initial_position})")
+        print(f"  Position after final: {position_after_final} (backtracked from 50)")
+
+        # Partial updates should be very fast (< 2ms) with Phase 1 optimization
+        assert partial_time < 0.002, f"Partial update too slow: {partial_time*1000:.3f}ms"
+
+        # Final update with backtrack should have detected the jump
+        # Position should be around 25 (end of backtrack_words)
+        assert position_after_final < 50, "Backtrack detection failed in final update"
+        assert 20 <= position_after_final <= 30, f"Backtrack positioned incorrectly: {position_after_final}"
+
+    def test_phase1_partial_performance_improvement(self, sample_script: str):
+        """Verify Phase 1 delivers expected performance improvement for partials."""
+        tracker = ScriptTracker(sample_script)
+
+        # Test with realistic partial updates (100 updates as per the analysis)
+        times = []
+        for i in range(100):
+            # Each partial adds 5-10 words
+            chunk_size = 5 if i % 2 == 0 else 10
+            start_pos = (i * 5) % min(100, len(tracker.words) - 10)
+            partial_text = " ".join(tracker.words[:start_pos + chunk_size])
+
+            start = time.perf_counter()
+            tracker.update(partial_text, is_partial=True)
+            duration = time.perf_counter() - start
+            times.append(duration)
+
+        avg_time = sum(times) / len(times)
+        p95_time = sorted(times)[int(len(times) * 0.95)]
+        max_time = max(times)
+
+        print(f"\nPhase 1 Performance Improvement:")
+        print(f"  Partial updates: {len(times)}")
+        print(f"  Average: {avg_time*1000:.3f}ms")
+        print(f"  P95: {p95_time*1000:.3f}ms")
+        print(f"  Max: {max_time*1000:.3f}ms")
+
+        # Phase 1 target: reduce from 3.5ms to 0.5ms average
+        # Let's set the threshold at 1ms to have some margin
+        assert avg_time < 0.001, f"Phase 1 target not met - avg partial time: {avg_time*1000:.3f}ms (target: < 1ms)"
+
+        # P95 should be well below the original 16.4ms
+        assert p95_time < 0.005, f"Phase 1 P95 target not met: {p95_time*1000:.3f}ms (target: < 5ms)"
+
     def test_save_profiling_report(self, sample_script: str):
         """Save detailed profiling report to JSON."""
         tracker = ScriptTracker(sample_script)

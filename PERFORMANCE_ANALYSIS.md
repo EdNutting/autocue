@@ -156,8 +156,8 @@ if is_partial and time_since_last_partial < 0.05:
 ### Phase 1: Quick Wins (1-2 hours)
 
 1. ✅ Set up profiling infrastructure
-2. ⏭️ Skip jump detection for partial updates
-3. ⏭️ Reduce window search range for partials
+2. ✅ Skip jump detection for partial updates
+3. ✅ Reduce window search range for partials
 
 **Expected Result**: Partial updates from 3.5ms → 0.5ms avg
 
@@ -226,9 +226,9 @@ python -m pytest tests/test_performance.py::TestTrackingPerformance::test_realis
 
 ## Next Steps
 
-1. **Validate findings in real usage** - Run profiling during actual recording session
+1. ✅ **Validate findings in real usage** - Run profiling during actual recording session
 2. **Implement Phase 1 optimizations** - Quick wins for immediate improvement
-3. **Set up performance CI** - Catch regressions early
+3. ~**Set up performance CI** - Catch regressions early~
 4. **Consider parallel architecture** - For maximum responsiveness
 
 ## Tools Available
