@@ -170,7 +170,8 @@ class WebServer:
         host: str = "127.0.0.1",
         port: int = 8000,
         initial_settings: DisplaySettings | None = None,
-        samples_dir: str | None = None
+        samples_dir: str | None = None,
+        scripts_folder: str | None = None
     ) -> None:
         self.host: str = host
         self.port: int = port
@@ -184,6 +185,9 @@ class WebServer:
         else:
             # Default to samples/ in the project root
             self.samples_dir = Path(__file__).parent.parent.parent / "samples"
+
+        # Extra scripts folder (from config)
+        self.scripts_folder: Path | None = Path(scripts_folder) if scripts_folder else None
 
         # Current state
         self.script_text: str = ""
@@ -208,24 +212,46 @@ class WebServer:
 
         self._setup_routes()
 
-    def _get_sample_scripts(self) -> list[dict[str, str]]:
-        """Get list of available sample scripts."""
-        samples: list[dict[str, str]] = []
+    def _get_sample_scripts(self) -> dict[str, list[dict[str, str]]]:
+        """Get list of available sample scripts, grouped by source."""
+        result: dict[str, list[dict[str, str]]] = {
+            "samples": [],
+            "extras": []
+        }
+
+        # Add sample scripts
         if self.samples_dir.exists():
             for f in sorted(self.samples_dir.glob("*.md")):
-                samples.append({
+                result["samples"].append({
                     "name": f.stem.replace("_", " ").title(),
-                    "filename": f.name
+                    "filename": f.name,
+                    "source": "samples"
                 })
-        return samples
 
-    def _load_sample_script(self, filename: str) -> str | None:
-        """Load a sample script by filename."""
+        # Add extra scripts from configured folder
+        if self.scripts_folder and self.scripts_folder.exists():
+            for f in sorted(self.scripts_folder.glob("*.md")):
+                result["extras"].append({
+                    "name": f.stem.replace("_", " ").title(),
+                    "filename": f.name,
+                    "source": "extras"
+                })
+
+        return result
+
+    def _load_sample_script(self, filename: str, source: str = "samples") -> str | None:
+        """Load a sample script by filename from the specified source."""
         if not filename:
             return None
         # Sanitize filename to prevent path traversal
         safe_name: str = Path(filename).name
-        script_path: Path = self.samples_dir / safe_name
+
+        # Determine which directory to load from
+        if source == "extras" and self.scripts_folder:
+            script_path: Path = self.scripts_folder / safe_name
+        else:
+            script_path = self.samples_dir / safe_name
+
         if script_path.exists() and script_path.suffix == ".md":
             return script_path.read_text(encoding="utf-8")
         return None
@@ -301,6 +327,7 @@ class WebServer:
             "save_config": self._on_save_config_message,
             "frontend_highlight": self._on_frontend_highlight_message,
             "load_sample": self._on_load_sample_message,
+            "refresh_scripts": self._on_refresh_scripts_message,
             "toggle_transcript": self._on_toggle_transcript_message,
             "set_audio_device": self._on_set_audio_device_message,
             "get_transcription_models": self._on_get_transcription_models,
@@ -406,10 +433,25 @@ class WebServer:
     ) -> None:
         """Handle load sample script message."""
         filename: str = str(data.get("filename", ""))
-        content: str | None = self._load_sample_script(filename)
+        source: str = str(data.get("source", "samples"))
+        content: str | None = self._load_sample_script(filename, source)
         if content is not None:
             self.script_text = content
             await self._render_and_broadcast_script()
+
+    async def _on_refresh_scripts_message(
+        self,
+        ws: web.WebSocketResponse,
+        _data: dict[str, object]
+    ) -> None:
+        """Handle refresh scripts list message."""
+        # Reload the scripts list from disk
+        scripts = self._get_sample_scripts()
+        # Send updated list back to the requesting client
+        await ws.send_json({
+            "type": "scripts_refreshed",
+            "samples": scripts
+        })
 
     async def _on_toggle_transcript_message(
         self,

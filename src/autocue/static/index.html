@@ -203,6 +203,32 @@
             background: rgba(255, 140, 66, 0.05);
         }
 
+        .icon-btn {
+            background: none;
+            border: none;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            color: #666;
+            opacity: 0.6;
+            transition: color 0.2s ease, opacity 0.2s ease, transform 0.1s ease;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 140%;
+        }
+
+        .icon-btn:hover {
+            color: var(--highlight-color);
+            opacity: 1;
+            transform: scale(1.1);
+        }
+
+        .icon-btn:active {
+            transform: scale(0.95);
+        }
+
         .settings-section {
             margin-bottom: 32px;
             padding: 20px;
@@ -697,8 +723,9 @@
             <div class="editor-header">
                 <span class="editor-title">◉ REC / Script Input</span>
                 <div style="display: flex; gap: 14px; align-items: center;">
+                    <button class="icon-btn" onclick="refreshScripts()" title="Refresh scripts list">⟳</button>
                     <select class="setting-select" id="sample-select" style="min-width: 200px;">
-                        <option value="">Load sample script...</option>
+                        <option value="">Load script...</option>
                     </select>
                     <button class="btn btn-primary" onclick="startPrompter()">▶ Start Broadcast</button>
                 </div>
@@ -1018,6 +1045,10 @@ Ready when you are."></textarea>
 
                 case 'model_loading_status':
                     handleModelLoadingStatus(data);
+                    break;
+
+                case 'scripts_refreshed':
+                    populateSamples(data.samples || []);
                     break;
             }
         }
@@ -1379,28 +1410,71 @@ Ready when you are."></textarea>
         // Populate sample scripts dropdown
         function populateSamples(samples) {
             const select = document.getElementById('sample-select');
-            // Clear existing options except the first placeholder
-            while (select.options.length > 1) {
-                select.remove(1);
+            // Clear existing options and optgroups, keeping only the first placeholder
+            const placeholder = select.options[0];
+            select.innerHTML = '';
+            select.appendChild(placeholder);
+
+            // Handle both old format (flat array) and new format (grouped object)
+            if (Array.isArray(samples)) {
+                // Old format - flat array
+                samples.forEach(sample => {
+                    const option = document.createElement('option');
+                    option.value = sample.filename;
+                    option.textContent = sample.name;
+                    option.dataset.source = sample.source || 'samples';
+                    select.appendChild(option);
+                });
+            } else {
+                // New format - grouped object
+                // Add sample scripts group
+                if (samples.samples && samples.samples.length > 0) {
+                    const samplesGroup = document.createElement('optgroup');
+                    samplesGroup.label = 'Sample Scripts';
+                    samples.samples.forEach(sample => {
+                        const option = document.createElement('option');
+                        option.value = sample.filename;
+                        option.textContent = sample.name;
+                        option.dataset.source = sample.source;
+                        samplesGroup.appendChild(option);
+                    });
+                    select.appendChild(samplesGroup);
+                }
+
+                // Add extra scripts group
+                if (samples.extras && samples.extras.length > 0) {
+                    const extrasGroup = document.createElement('optgroup');
+                    extrasGroup.label = 'My Scripts';
+                    samples.extras.forEach(sample => {
+                        const option = document.createElement('option');
+                        option.value = sample.filename;
+                        option.textContent = sample.name;
+                        option.dataset.source = sample.source;
+                        extrasGroup.appendChild(option);
+                    });
+                    select.appendChild(extrasGroup);
+                }
             }
-            // Add sample options
-            samples.forEach(sample => {
-                const option = document.createElement('option');
-                option.value = sample.filename;
-                option.textContent = sample.name;
-                select.appendChild(option);
-            });
         }
 
         // Sample script selection handler
         document.getElementById('sample-select').addEventListener('change', (e) => {
             const filename = e.target.value;
+            const selectedOption = e.target.selectedOptions[0];
+            const source = selectedOption?.dataset?.source || 'samples';
             if (filename && ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'load_sample', filename: filename }));
+                ws.send(JSON.stringify({ type: 'load_sample', filename: filename, source: source }));
             }
             // Reset dropdown to placeholder
             e.target.value = '';
         });
+
+        // Refresh scripts list
+        function refreshScripts() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'refresh_scripts' }));
+            }
+        }
 
         // Fetch audio devices from backend
         async function fetchAudioDevices() {

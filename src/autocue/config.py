@@ -56,6 +56,8 @@ class Config(TypedDict):
     port: int
     audio_device: int | None
     chunk_ms: int
+    # Scripts folder (optional)
+    scripts_folder: str | None
     # UI settings
     display: DisplaySettings
     tracking: TrackingSettings
@@ -79,6 +81,9 @@ DEFAULT_CONFIG: Config = {
     "port": 8000,
     "audio_device": None,
     "chunk_ms": 100,
+
+    # Scripts folder (optional - set to a folder path to show extra scripts in UI)
+    "scripts_folder": None,
 
     # UI display settings
     "display": {

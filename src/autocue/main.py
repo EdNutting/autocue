@@ -56,7 +56,8 @@ class AutocueApp:
         chunk_ms: int = 100,
         display_settings: DisplaySettings | None = None,
         tracking_settings: TrackingSettings | None = None,
-        save_transcript: bool = False
+        save_transcript: bool = False,
+        scripts_folder: str | None = None
     ) -> None:
         # type: ignore[assignment]
         self.transcription_config: TranscriptionConfig = (
@@ -75,6 +76,7 @@ class AutocueApp:
             tracking_settings or DEFAULT_CONFIG["tracking"]
         )
         self.save_transcript: bool = save_transcript
+        self.scripts_folder: str | None = scripts_folder
 
         self.audio: AudioCapture | None = None
         self.transcriber: Transcriber | None = None
@@ -191,7 +193,8 @@ class AutocueApp:
         self.server = WebServer(
             host=self.host,
             port=self.port,
-            initial_settings=self.display_settings
+            initial_settings=self.display_settings,
+            scripts_folder=self.scripts_folder
         )
         await self.server.start()
 
@@ -635,7 +638,8 @@ def main() -> None:
         chunk_ms=args.chunk_ms,
         display_settings=get_display_settings(config),
         tracking_settings=get_tracking_settings(config),
-        save_transcript=args.save_transcript
+        save_transcript=args.save_transcript,
+        scripts_folder=config.get("scripts_folder")
     )
 
     # Handle shutdown gracefully
