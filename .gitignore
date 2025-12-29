@@ -5,4 +5,5 @@ autocue.egg-info
 .autocue.yaml
 transcripts/
 .claude/settings.local.json
+scripts/
 profiling_results

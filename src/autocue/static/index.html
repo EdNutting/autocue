@@ -542,6 +542,32 @@
             left: 300px;
         }
 
+        /* Timer display */
+        #timer-display {
+            position: fixed;
+            top: 24px;
+            left: 420px;
+            font-family: "Courier Prime", monospace;
+            font-size: 18px;
+            font-weight: 700;
+            padding: 12px 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid var(--border-color);
+            border-radius: 2px;
+            color: var(--highlight-color);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            min-width: 100px;
+            text-align: center;
+        }
+
+        #timer-display.paused {
+            color: #AAA;
+            border-color: #666;
+        }
+
         #exit-btn:hover,
         #transcript-btn:hover,
         #fullscreen-btn:hover {
@@ -831,6 +857,7 @@ Ready when you are."></textarea>
             <span id="transcript-btn-text">Transcribe</span>
         </button>
         <button id="fullscreen-btn" onclick="toggleFullscreen()">⛶ Full</button>
+        <div id="timer-display">00:00</div>
         <div id="transcript"></div>
     </div>
 
@@ -854,6 +881,9 @@ Ready when you are."></textarea>
         let transcriptionModels = [];  // Available transcription models
         let currentTranscriptionConfig = null;  // Current transcription configuration
         let waitingForModelLoad = false;  // Track if we're waiting for model to load
+        let timerStartTime = null;  // Timer start timestamp
+        let timerElapsed = 0;  // Accumulated elapsed time in milliseconds
+        let timerInterval = null;  // Timer update interval
 
         // Connect WebSocket
         function connect() {
@@ -1136,6 +1166,9 @@ Ready when you are."></textarea>
 
             // Apply settings
             applySettings(settings);
+
+            // Start the timer
+            startTimer();
         }
 
         function exitPrompter() {
@@ -1143,6 +1176,9 @@ Ready when you are."></textarea>
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'stop_prompting' }));
             }
+
+            // Stop the timer
+            stopTimer();
 
             document.getElementById('editor-container').classList.remove('hidden');
             document.getElementById('prompter-container').classList.remove('active');
@@ -1244,6 +1280,67 @@ Ready when you are."></textarea>
             currentWordIndex = 0;
             renderScriptByWordIndex(0);
             document.getElementById('progress-bar').style.width = '0%';
+            // Reset timer - restart only if not paused
+            stopTimer();
+            if (!isPaused) {
+                startTimer();
+            } else {
+                // Keep paused styling when reset while paused
+                document.getElementById('timer-display').classList.add('paused');
+            }
+        }
+
+        // Timer functions
+        function startTimer() {
+            timerStartTime = Date.now();
+            timerElapsed = 0;
+            updateTimerDisplay();
+            timerInterval = setInterval(updateTimerDisplay, 100);  // Update every 100ms for smooth display
+            document.getElementById('timer-display').classList.remove('paused');
+        }
+
+        function pauseTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            // Accumulate elapsed time
+            if (timerStartTime) {
+                timerElapsed += Date.now() - timerStartTime;
+                timerStartTime = null;
+            }
+            document.getElementById('timer-display').classList.add('paused');
+        }
+
+        function resumeTimer() {
+            timerStartTime = Date.now();
+            timerInterval = setInterval(updateTimerDisplay, 100);
+            document.getElementById('timer-display').classList.remove('paused');
+        }
+
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            timerStartTime = null;
+            timerElapsed = 0;
+            document.getElementById('timer-display').textContent = '00:00';
+            document.getElementById('timer-display').classList.remove('paused');
+        }
+
+        function updateTimerDisplay() {
+            let totalMs = timerElapsed;
+            if (timerStartTime) {
+                totalMs += Date.now() - timerStartTime;
+            }
+
+            const totalSeconds = Math.floor(totalMs / 1000);
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+
+            const display = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            document.getElementById('timer-display').textContent = display;
         }
 
         // Keyboard shortcuts
@@ -1260,6 +1357,12 @@ Ready when you are."></textarea>
                     e.preventDefault();
                     isPaused = !isPaused;
                     document.getElementById('status-text').textContent = isPaused ? 'Paused' : 'On Air';
+                    // Pause/resume the timer
+                    if (isPaused) {
+                        pauseTimer();
+                    } else {
+                        resumeTimer();
+                    }
                     break;
                 case 'r':
                 case 'R':
