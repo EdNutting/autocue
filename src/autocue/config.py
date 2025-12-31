@@ -27,6 +27,7 @@ class DisplaySettings(TypedDict):
     textColor: str
     dimColor: str
     backgroundColor: str
+    skipHeaders: bool
 
 
 class TrackingSettings(TypedDict):
@@ -35,6 +36,7 @@ class TrackingSettings(TypedDict):
     match_threshold: float
     backtrack_threshold: int
     max_jump_distance: int
+    skip_headers: bool
 
 
 class TranscriptionConfig(TypedDict):
@@ -97,6 +99,7 @@ DEFAULT_CONFIG: Config = {
         "textColor": "#FFFFFF",
         "dimColor": "#666666",
         "backgroundColor": "#1a1a1a",
+        "skipHeaders": False,
     },
 
     # Tracking thresholds
@@ -106,6 +109,8 @@ DEFAULT_CONFIG: Config = {
         "backtrack_threshold": 3,
         # Max words to jump (prevents jumping to similar text far away)
         "max_jump_distance": 50,
+        # Skip headers during tracking (headers still displayed but not tracked)
+        "skip_headers": False,
     },
 }
 

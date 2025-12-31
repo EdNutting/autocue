@@ -86,6 +86,8 @@ class SpeakableWord:
     is_expansion: bool = False
     # For expandable tokens, store all possible expansions for dynamic matching
     all_expansions: list[list[str]] = field(default_factory=list)
+    # True if this word comes from a header (h1, h2, h3, etc.)
+    is_header: bool = False
 
     def __repr__(self) -> str:
         if self.is_expansion:
@@ -400,11 +402,23 @@ def _preprocess_token_for_other_punctuation(token: str) -> list[str]:
 
 
 class HTMLTextExtractor(HTMLParser):
-    """Extract text content from HTML, preserving word boundaries."""
+    """Extract text content from HTML, preserving word boundaries and header context."""
 
     def __init__(self) -> None:
         super().__init__()
         self.tokens: list[str] = []
+        self.is_header_tokens: list[bool] = []  # Track if each token is from a header
+        self.in_header: bool = False  # Track if we're currently inside a header tag
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Track when we enter a header tag."""
+        if tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+            self.in_header = True
+
+    def handle_endtag(self, tag: str) -> None:
+        """Track when we exit a header tag."""
+        if tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+            self.in_header = False
 
     def handle_data(self, data: str) -> None:
         """Extract words from text content."""
@@ -413,6 +427,7 @@ class HTMLTextExtractor(HTMLParser):
         for word in words:
             if word.strip():
                 self.tokens.append(word)
+                self.is_header_tokens.append(self.in_header)
 
 
 def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
@@ -436,20 +451,27 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
 
     # Extract tokens from HTML if provided, otherwise from raw text
     tokens: list[str]
+    is_header_flags: list[bool]
     if rendered_html:
         extractor: HTMLTextExtractor = HTMLTextExtractor()
         extractor.feed(rendered_html)
         tokens = extractor.tokens
+        is_header_flags = extractor.is_header_tokens
     else:
-        # Fallback to raw text parsing
+        # Fallback to raw text parsing (no header detection)
         tokens = []
+        is_header_flags = []
         for line in text.split('\n'):
-            tokens.extend(word for word in line.split() if word.strip())
+            for word in line.split():
+                if word.strip():
+                    tokens.append(word)
+                    is_header_flags.append(False)
 
     raw_index: int = 0
     speakable_index: int = 0
 
-    for token in tokens:
+    for token_idx, token in enumerate(tokens):
+        is_header: bool = is_header_flags[token_idx] if token_idx < len(is_header_flags) else False
         if not token.strip():
             continue
 
@@ -488,7 +510,8 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
                     text="<expansion>",
                     raw_token_index=raw_index,
                     is_expansion=True,
-                    all_expansions=all_exps
+                    all_expansions=all_exps,
+                    is_header=is_header
                 )
                 speakable_words.append(sw)
                 raw_to_speakable[raw_index].append(speakable_index)
@@ -504,7 +527,8 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
                         text="<numeric expansion>",
                         raw_token_index=raw_index,
                         is_expansion=True,
-                        all_expansions=number_expansions
+                        all_expansions=number_expansions,
+                        is_header=is_header
                     )
                     speakable_words.append(sw)
                     raw_to_speakable[raw_index].append(speakable_index)
@@ -517,7 +541,8 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
                         sw: SpeakableWord = SpeakableWord(
                             text=normalized,
                             raw_token_index=raw_index,
-                            is_expansion=False
+                            is_expansion=False,
+                            is_header=is_header
                         )
                         speakable_words.append(sw)
                         raw_to_speakable[raw_index].append(speakable_index)
@@ -534,7 +559,8 @@ def parse_script(text: str, rendered_html: str | None = None) -> ParsedScript:
                     sw: SpeakableWord = SpeakableWord(
                         text=normalized,
                         raw_token_index=raw_index,
-                        is_expansion=False
+                        is_expansion=False,
+                        is_header=is_header
                     )
                     speakable_words.append(sw)
                     raw_to_speakable[raw_index].append(speakable_index)

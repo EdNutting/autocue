@@ -132,7 +132,8 @@ class ScriptTracker:
         match_threshold: float = 70.0,
         jump_threshold: int = 3,
         max_jump_distance: int = 50,
-        max_skip_distance: int = 2
+        max_skip_distance: int = 2,
+        skip_headers: bool = False
     ) -> None:
         """
         Initialize the script tracker.
@@ -146,12 +147,14 @@ class ScriptTracker:
                 jumping to similar sentences far away in the script)
             max_skip_distance: Maximum script words to skip when looking for a match
                 (prevents false matches when speaker deviates from script)
+            skip_headers: Skip header words during tracking (headers still displayed)
         """
         self.window_size = window_size
         self.match_threshold = match_threshold
         self.jump_threshold = jump_threshold
         self.max_jump_distance = max_jump_distance
         self.max_skip_distance = max_skip_distance
+        self.skip_headers = skip_headers
 
         # Render markdown to HTML first
         rendered_html: str = markdown.markdown(
@@ -668,9 +671,25 @@ class ScriptTracker:
         - Advances position when an expansion is complete
 
         Also skips filler words, repeated words, and allows skipping script words.
+        If skip_headers is enabled, automatically skips over header words.
         Returns whether the word was matched, and whether to advance in the script.
         """
         optimistic_position = state.optimistic_position
+
+        if optimistic_position >= len(self.words):
+            return SingleWordMatchResult(False, False, False)
+
+        # Auto-skip header words if skip_headers is enabled
+        if self.skip_headers:
+            speakable_words = self.parsed_script.speakable_words
+            while optimistic_position < len(speakable_words):
+                sw = speakable_words[optimistic_position]
+                if sw.is_header:
+                    # Skip this header word
+                    optimistic_position += 1
+                    state.optimistic_position = optimistic_position
+                else:
+                    break
 
         if optimistic_position >= len(self.words):
             return SingleWordMatchResult(False, False, False)

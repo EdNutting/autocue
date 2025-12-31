@@ -80,6 +80,7 @@ class ThreadedTracker:
         match_threshold: float = 65.0,
         jump_threshold: int = 3,
         max_jump_distance: int = 50,
+        skip_headers: bool = False,
         partial_throttle_ms: int = 50,
         max_queue_size: int = 10
     ):
@@ -92,6 +93,7 @@ class ThreadedTracker:
             match_threshold: Match threshold for fuzzy matching
             jump_threshold: Threshold for jump detection
             max_jump_distance: Maximum jump distance
+            skip_headers: Skip header words during tracking
             partial_throttle_ms: Minimum time between partial updates (default: 50ms)
             max_queue_size: Maximum queue size before backpressure kicks in (default: 10)
         """
@@ -100,6 +102,7 @@ class ThreadedTracker:
         self.match_threshold = match_threshold
         self.jump_threshold = jump_threshold
         self.max_jump_distance = max_jump_distance
+        self.skip_headers = skip_headers
         self.partial_throttle_ms = partial_throttle_ms
         self.max_queue_size = max_queue_size
 
@@ -150,7 +153,8 @@ class ThreadedTracker:
                 window_size=self.window_size,
                 match_threshold=self.match_threshold,
                 jump_threshold=self.jump_threshold,
-                max_jump_distance=self.max_jump_distance
+                max_jump_distance=self.max_jump_distance,
+                skip_headers=self.skip_headers
             )
 
             logger.info("ThreadedTracker worker started")

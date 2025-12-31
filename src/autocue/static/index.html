@@ -410,6 +410,19 @@
             letter-spacing: 1px;
         }
 
+        /* Visual indicator for skipped headers */
+        #script-display.skip-headers h1::before,
+        #script-display.skip-headers h2::before,
+        #script-display.skip-headers h3::before,
+        #script-display.skip-headers h4::before,
+        #script-display.skip-headers h5::before,
+        #script-display.skip-headers h6::before {
+            content: "⊘ ";
+            color: #666;
+            font-size: 0.8em;
+            margin-right: 0.3em;
+        }
+
         #script-display h1 { font-size: 1.5em; color: var(--text-color); }
         #script-display h2 { font-size: 1.3em; color: var(--text-color); }
         #script-display h3 { font-size: 1.15em; }
@@ -778,6 +791,14 @@ Ready when you are."></textarea>
             </div>
 
             <div class="settings-section">
+                <div class="settings-title">⚡ Tracking</div>
+                <div class="setting-row">
+                    <span class="setting-label">Skip Headers</span>
+                    <input type="checkbox" id="setting-skipHeaders" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--highlight-color);">
+                </div>
+            </div>
+
+            <div class="settings-section">
                 <div class="settings-title">⚡ Recording</div>
                 <div class="setting-row">
                     <span class="setting-label">Save Transcript</span>
@@ -1133,7 +1154,21 @@ Ready when you are."></textarea>
             // Update input values
             for (const [key, value] of Object.entries(s)) {
                 const el = document.getElementById('setting-' + key);
-                if (el) el.value = value;
+                if (el) {
+                    if (el.type === 'checkbox') {
+                        el.checked = value;
+                    } else {
+                        el.value = value;
+                    }
+                }
+            }
+
+            // Apply skip-headers class to script display
+            const scriptDisplay = document.getElementById('script-display');
+            if (s.skipHeaders) {
+                scriptDisplay.classList.add('skip-headers');
+            } else {
+                scriptDisplay.classList.remove('skip-headers');
             }
         }
 
@@ -1144,6 +1179,7 @@ Ready when you are."></textarea>
                 lineHeight: parseFloat(document.getElementById('setting-lineHeight').value),
                 pastLines: parseInt(document.getElementById('setting-pastLines').value),
                 futureLines: parseInt(document.getElementById('setting-futureLines').value),
+                skipHeaders: document.getElementById('setting-skipHeaders').checked,
                 highlightColor: document.getElementById('setting-highlightColor').value,
                 textColor: document.getElementById('setting-textColor').value,
                 dimColor: document.getElementById('setting-dimColor').value,
@@ -1734,6 +1770,15 @@ Ready when you are."></textarea>
                     ws.send(JSON.stringify({ type: 'settings', settings: newSettings }));
                 }
             });
+        });
+
+        // Special handler for skipHeaders - needs to reload tracker
+        document.getElementById('setting-skipHeaders').addEventListener('change', (e) => {
+            const newSettings = getSettings();
+            applySettings(newSettings);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'update_tracking_settings', skipHeaders: e.target.checked }));
+            }
         });
 
         // Transcript checkbox handler - just stores the preference locally

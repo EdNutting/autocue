@@ -293,6 +293,7 @@ class AutocueApp:
                         "backtrack_threshold", 3),
                     max_jump_distance=self.tracking_settings.get(
                         "max_jump_distance", 50),
+                    skip_headers=self.tracking_settings.get("skip_headers", False),
                     partial_throttle_ms=50,  # Phase 3: 50ms throttle
                     max_queue_size=10  # Phase 3: backpressure limit
                 )

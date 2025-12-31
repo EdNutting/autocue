@@ -336,6 +336,7 @@ class WebServer:
             "download_model": self._on_download_model,
             "start_prompting": self._on_start_prompting_message,
             "stop_prompting": self._on_stop_prompting_message,
+            "update_tracking_settings": self._on_update_tracking_settings_message,
         }
 
         handler: object | None = handlers.get(
@@ -693,6 +694,48 @@ class WebServer:
         self.stop_prompting_requested = True
         self.is_prompting = False
         logger.info("Stop prompting requested")
+
+    async def _on_update_tracking_settings_message(
+        self,
+        ws: web.WebSocketResponse,
+        data: dict[str, object]
+    ) -> None:
+        """Handle update tracking settings message (requires tracker reload)."""
+        try:
+            # Update tracking configuration
+            config = load_config()
+            if "skipHeaders" in data:
+                config["tracking"]["skip_headers"] = bool(data["skipHeaders"])
+                # Also update display settings to keep UI in sync
+                config["display"]["skipHeaders"] = bool(data["skipHeaders"])
+                self.settings["skipHeaders"] = bool(data["skipHeaders"])
+
+            # Save configuration
+            if save_config(config):
+                await ws.send_json({
+                    "type": "tracking_settings_updated",
+                    "success": True,
+                    "message": "Tracking settings updated. Restart prompter to apply."
+                })
+                # Broadcast to all clients
+                await self.broadcast({
+                    "type": "tracking_settings_updated",
+                    "success": True,
+                    "message": "Tracking settings updated. Restart prompter to apply."
+                })
+            else:
+                await ws.send_json({
+                    "type": "tracking_settings_updated",
+                    "success": False,
+                    "error": "Failed to save config"
+                })
+        except Exception as e:
+            logger.error("Error updating tracking settings: %s", e)
+            await ws.send_json({
+                "type": "tracking_settings_updated",
+                "success": False,
+                "error": str(e)
+            })
 
     async def _render_and_broadcast_script(self) -> None:
         """Render script to HTML and broadcast to all clients."""
