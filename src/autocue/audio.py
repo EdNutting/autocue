@@ -27,6 +27,10 @@ class AudioCapture:
     audio_queue: queue.Queue[bytes]
     stream: sd.RawInputStream | None
     running: bool
+    _device_sample_rate: int
+    _needs_resample: bool
+    _capture_dtype: type[np.int16] | type[np.float32]
+    _needs_dtype_convert: bool
 
     def __init__(
         self,
@@ -51,9 +55,36 @@ class AudioCapture:
         self.stream: sd.RawInputStream | None = None
         self.running = False
 
+        self._device_sample_rate = sample_rate
+        self._needs_resample = False
+        self._capture_dtype: type[np.int16] | type[np.float32] = np.int16
+        self._needs_dtype_convert = False
+
+    def _convert_audio(self, indata: npt.NDArray[Any]) -> bytes:
+        """Convert captured audio to int16 at the target sample rate."""
+        data: npt.NDArray[np.int16]
+
+        if self._needs_dtype_convert:
+            # float32 [-1.0, 1.0] -> int16
+            data = (np.frombuffer(indata, dtype=np.float32) * 32767).astype(
+                np.int16)
+        else:
+            data = np.frombuffer(indata, dtype=np.int16)
+
+        if self._needs_resample:
+            # Resample from device rate to target rate using linear interpolation
+            n_input = len(data)
+            n_output = int(n_input * self.sample_rate / self._device_sample_rate)
+            x_old = np.linspace(0, 1, n_input)
+            x_new = np.linspace(0, 1, n_output)
+            data = np.interp(x_new, x_old, data.astype(np.float64)).astype(
+                np.int16)
+
+        return bytes(data)
+
     def _audio_callback(
         self,
-        indata: npt.NDArray[np.int16],
+        indata: npt.NDArray[Any],
         frames: int,
         time: Any,
         status: sd.CallbackFlags
@@ -61,8 +92,27 @@ class AudioCapture:
         """Called for each audio chunk from the microphone."""
         if status:
             print(f"Audio status: {status}")
-        # Convert to bytes for Vosk
-        self.audio_queue.put(bytes(indata))
+
+        if self._needs_resample or self._needs_dtype_convert:
+            self.audio_queue.put(self._convert_audio(indata))
+        else:
+            self.audio_queue.put(bytes(indata))
+
+    def _try_open_stream(
+        self,
+        samplerate: int,
+        blocksize: int,
+        dtype: type[np.int16] | type[np.float32],
+    ) -> sd.RawInputStream:
+        """Attempt to open a RawInputStream with the given parameters."""
+        return sd.RawInputStream(
+            samplerate=samplerate,
+            blocksize=blocksize,
+            device=self.device,
+            dtype=dtype,
+            channels=1,
+            callback=self._audio_callback,
+        )
 
     def start(self) -> None:
         """Start capturing audio from the microphone."""
@@ -74,14 +124,52 @@ class AudioCapture:
 
         self.running = True
         stream_create_start = time_m.time()
-        self.stream = sd.RawInputStream(
-            samplerate=self.sample_rate,
-            blocksize=self.chunk_size,
-            device=self.device,
-            dtype=np.int16,
-            channels=1,
-            callback=self._audio_callback
-        )
+
+        # Try 1: target rate (16000 Hz) with int16
+        try:
+            self.stream = self._try_open_stream(
+                self.sample_rate, self.chunk_size, np.int16)
+        except sd.PortAudioError as e1:
+            print(f"[AUDIO] Cannot open at {self.sample_rate} Hz int16: {e1}")
+
+            # Query device's default sample rate
+            dev_info: dict[str, Any] = dict(
+                sd.query_devices(
+                    self.device if self.device is not None
+                    else sd.default.device[0],
+                    'input',
+                )  # type: ignore[arg-type]
+            )
+            native_rate = int(dev_info.get('default_samplerate', 44100))
+            native_blocksize = int(
+                native_rate * self.chunk_duration_ms / 1000)
+
+            # Try 2: device's native rate with int16
+            try:
+                self.stream = self._try_open_stream(
+                    native_rate, native_blocksize, np.int16)
+                self._device_sample_rate = native_rate
+                self._needs_resample = True
+                print(
+                    f"[AUDIO] Opened at {native_rate} Hz int16"
+                    " (will resample to"
+                    f" {self.sample_rate} Hz)")
+            except sd.PortAudioError as e2:
+                print(
+                    f"[AUDIO] Cannot open at {native_rate} Hz int16: {e2}")
+
+                # Try 3: device's native rate with float32
+                self.stream = self._try_open_stream(
+                    native_rate, native_blocksize, np.float32)
+                self._device_sample_rate = native_rate
+                self._needs_resample = True
+                self._capture_dtype = np.float32
+                self._needs_dtype_convert = True
+                print(
+                    f"[AUDIO] Opened at {native_rate} Hz float32"
+                    " (will convert and resample to"
+                    f" {self.sample_rate} Hz int16)")
+
         print(
             f"[AUDIO] RawInputStream created in {time_m.time() - stream_create_start:.3f}s")
 
