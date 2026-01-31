@@ -32,6 +32,9 @@ autocue-debug-transcript = "autocue.debug_transcript:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+autocue = ["static/**/*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = [

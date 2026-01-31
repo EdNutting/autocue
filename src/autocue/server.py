@@ -23,6 +23,7 @@ import sounddevice as sd
 from aiohttp import web
 
 from . import debug_log
+from .audio import _get_default_hostapi_index
 from .config import DEFAULT_CONFIG, DisplaySettings, load_config, save_config, update_config_display
 from .providers import download_model_with_progress, get_all_available_models, is_model_downloaded
 from .script_parser import ParsedScript, RawToken, parse_script
@@ -802,8 +803,11 @@ class WebServer:
         try:
             devices: object = sd.query_devices()
             device_list: list[dict[str, object]] = []
+            hostapi_index: int = _get_default_hostapi_index()
             for i, device in enumerate(devices):  # type: ignore[arg-type]
                 dev: dict[str, object] = dict(device)  # type: ignore[arg-type]
+                if dev.get('hostapi') != hostapi_index:
+                    continue
                 if int(dev['max_input_channels']) > 0:  # type: ignore[arg-type]
                     device_list.append({
                         "index": i,

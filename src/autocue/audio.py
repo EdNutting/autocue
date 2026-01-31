@@ -124,14 +124,31 @@ class AudioCapture:
                 break
 
 
+def _get_default_hostapi_index() -> int:
+    """Get the index of the default host API."""
+    hostapis = sd.query_hostapis()
+    for i, api in enumerate(hostapis):
+        api_dict: dict[str, Any] = dict(api)  # type: ignore[arg-type]
+        if api_dict.get('name', '') == 'Windows WASAPI':
+            return i
+    # Fall back to the host API of the default input device
+    default_dev: dict[str, Any] = dict(
+        sd.query_devices(kind='input')  # type: ignore[arg-type]
+    )
+    return int(default_dev.get('hostapi', 0))
+
+
 def list_devices() -> Sequence[Any]:
-    """List available audio input devices."""
+    """List available, enabled audio input devices."""
     print("Available audio input devices:")
     devices: Sequence[Any] = sd.query_devices()
+    hostapi_index: int = _get_default_hostapi_index()
     for i, device in enumerate(devices):
         # Convert device info to dict for easier access
         # type: ignore[arg-type, assignment]
         dev: dict[str, Any] = dict(device)
+        if dev.get('hostapi') != hostapi_index:
+            continue
         if dev.get('max_input_channels', 0) > 0:
             print(f"  [{i}] {dev.get('name', 'Unknown')} "
                   f"(inputs: {dev.get('max_input_channels', 0)})")
