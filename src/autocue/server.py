@@ -229,12 +229,22 @@ class WebServer:
                     "source": "samples"
                 })
 
-        # Add extra scripts from configured folder
+        # Add extra scripts from configured folder (including subdirectories)
         if self.scripts_folder and self.scripts_folder.exists():
-            for f in sorted(self.scripts_folder.glob("*.md")):
+            for f in sorted(self.scripts_folder.rglob("*.md")):
+                rel_path = f.relative_to(self.scripts_folder)
+                # Skip files inside hidden directories (starting with '.')
+                if any(part.startswith(".") for part in rel_path.parent.parts):
+                    continue
+                # Include subdirectory names in the display name
+                if rel_path.parent != Path("."):
+                    dir_parts = [p.replace("_", " ").title() for p in rel_path.parent.parts]
+                    dir_prefix = " / ".join(dir_parts) + " / "
+                else:
+                    dir_prefix = ""
                 result["extras"].append({
-                    "name": f.stem.replace("_", " ").title(),
-                    "filename": f.name,
+                    "name": dir_prefix + f.stem.replace("_", " ").title(),
+                    "filename": str(rel_path.as_posix()),
                     "source": "extras"
                 })
 
@@ -244,14 +254,17 @@ class WebServer:
         """Load a sample script by filename from the specified source."""
         if not filename:
             return None
-        # Sanitize filename to prevent path traversal
-        safe_name: str = Path(filename).name
 
         # Determine which directory to load from
         if source == "extras" and self.scripts_folder:
-            script_path: Path = self.scripts_folder / safe_name
+            base_dir = self.scripts_folder
         else:
-            script_path = self.samples_dir / safe_name
+            base_dir = self.samples_dir
+
+        # Resolve the full path and verify it stays within the base directory
+        script_path: Path = (base_dir / filename).resolve()
+        if not script_path.is_relative_to(base_dir.resolve()):
+            return None
 
         if script_path.exists() and script_path.suffix == ".md":
             return script_path.read_text(encoding="utf-8")
