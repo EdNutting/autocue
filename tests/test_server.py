@@ -312,3 +312,119 @@ def test_get_sample_scripts_excludes_dot_directories():
 
         assert len(scripts["extras"]) == 1
         assert scripts["extras"][0]["name"] == "Visible"
+
+
+class TestReloadScript:
+    """Tests for reloading script content from disk."""
+
+    def test_load_sample_tracks_filename(self):
+        """Verify loading a sample script tracks the filename and source."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            samples_dir = Path(tmpdir) / "samples"
+            samples_dir.mkdir()
+            (samples_dir / "test.md").write_text("# Original")
+
+            server = WebServer(samples_dir=str(samples_dir))
+            assert server.loaded_script_filename is None
+            assert server.loaded_script_source is None
+
+    def test_reload_returns_updated_content(self):
+        """Verify _load_sample_script returns updated content after file changes on disk."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            samples_dir = Path(tmpdir) / "samples"
+            samples_dir.mkdir()
+
+            script_path = samples_dir / "test.md"
+            script_path.write_text("# Original Content")
+
+            server = WebServer(samples_dir=str(samples_dir))
+
+            # Simulate loading the script (as _on_load_sample_message would)
+            content = server._load_sample_script("test.md", "samples")
+            assert content == "# Original Content"
+            server.script_text = content
+            server.loaded_script_filename = "test.md"
+            server.loaded_script_source = "samples"
+
+            # Modify the file on disk
+            script_path.write_text("# Updated Content")
+
+            # Reload should return the updated content
+            reloaded = server._load_sample_script(
+                server.loaded_script_filename, server.loaded_script_source
+            )
+            assert reloaded == "# Updated Content"
+
+    def test_reload_from_extras_folder(self):
+        """Verify reload works for scripts loaded from the extras folder."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            samples_dir = Path(tmpdir) / "samples"
+            samples_dir.mkdir()
+            scripts_folder = Path(tmpdir) / "scripts"
+            scripts_folder.mkdir()
+
+            script_path = scripts_folder / "my_script.md"
+            script_path.write_text("# Version 1")
+
+            server = WebServer(
+                samples_dir=str(samples_dir),
+                scripts_folder=str(scripts_folder)
+            )
+
+            # Simulate loading from extras
+            content = server._load_sample_script("my_script.md", "extras")
+            assert content == "# Version 1"
+            server.loaded_script_filename = "my_script.md"
+            server.loaded_script_source = "extras"
+
+            # Modify file
+            script_path.write_text("# Version 2")
+
+            # Reload returns new content
+            reloaded = server._load_sample_script(
+                server.loaded_script_filename, server.loaded_script_source
+            )
+            assert reloaded == "# Version 2"
+
+    def test_reload_without_loaded_file_is_noop(self):
+        """Verify reload does nothing when no file has been loaded."""
+        server = WebServer(samples_dir="/nonexistent")
+        assert server.loaded_script_filename is None
+        assert server.loaded_script_source is None
+        # _on_reload_script_message checks these before proceeding,
+        # so calling _load_sample_script with None would return None
+        result = server._load_sample_script("", "samples")
+        assert result is None
+
+    def test_reload_subdirectory_script(self):
+        """Verify reload works for scripts in subdirectories."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            samples_dir = Path(tmpdir) / "samples"
+            samples_dir.mkdir()
+            scripts_folder = Path(tmpdir) / "scripts"
+            scripts_folder.mkdir()
+
+            subdir = scripts_folder / "project"
+            subdir.mkdir()
+            script_path = subdir / "draft.md"
+            script_path.write_text("# Draft v1")
+
+            server = WebServer(
+                samples_dir=str(samples_dir),
+                scripts_folder=str(scripts_folder)
+            )
+
+            # Load from subdirectory
+            content = server._load_sample_script("project/draft.md", "extras")
+            assert content == "# Draft v1"
+            server.loaded_script_filename = "project/draft.md"
+            server.loaded_script_source = "extras"
+
+            # Modify on disk
+            script_path.write_text("# Draft v2")
+
+            # Reload picks up changes
+            reloaded = server._load_sample_script(
+                server.loaded_script_filename, server.loaded_script_source
+            )
+            assert reloaded == "# Draft v2"

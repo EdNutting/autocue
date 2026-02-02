@@ -738,6 +738,7 @@
                     <select class="setting-select" id="sample-select" style="min-width: 200px;">
                         <option value="">Load script...</option>
                     </select>
+                    <button class="icon-btn" id="reload-script-btn" onclick="reloadScript()" title="Reload script from disk" style="display: none;">↻</button>
                     <button class="btn btn-primary" onclick="startPrompter()">▶ Start Broadcast</button>
                 </div>
             </div>
@@ -930,6 +931,7 @@ Ready when you are."></textarea>
         let timerStartTime = null;  // Timer start timestamp
         let timerElapsed = 0;  // Accumulated elapsed time in milliseconds
         let timerInterval = null;  // Timer update interval
+        let loadedScriptFile = null;  // Currently loaded script filename (for reload)
 
         // Connect WebSocket
         function connect() {
@@ -1213,6 +1215,8 @@ Ready when you are."></textarea>
             const saveTranscript = document.getElementById('setting-saveTranscript').checked;
 
             // Send script to load it (without saveTranscript, as we'll send start_prompting separately)
+            loadedScriptFile = null;
+            updateReloadButton();
             ws.send(JSON.stringify({ type: 'script', text: script }));
             ws.send(JSON.stringify({ type: 'settings', settings: settings }));
 
@@ -1498,6 +1502,8 @@ Ready when you are."></textarea>
             const source = selectedOption?.dataset?.source || 'samples';
             if (filename && ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'load_sample', filename: filename, source: source }));
+                loadedScriptFile = { filename, source, name: selectedOption?.textContent || filename };
+                updateReloadButton();
             }
             // Reset dropdown to placeholder
             e.target.value = '';
@@ -1507,6 +1513,24 @@ Ready when you are."></textarea>
         function refreshScripts() {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'refresh_scripts' }));
+            }
+        }
+
+        // Reload currently loaded script from disk
+        function reloadScript() {
+            if (loadedScriptFile && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'reload_script' }));
+            }
+        }
+
+        // Show/hide the reload button based on whether a file is loaded
+        function updateReloadButton() {
+            const btn = document.getElementById('reload-script-btn');
+            if (loadedScriptFile) {
+                btn.style.display = '';
+                btn.title = 'Reload "' + loadedScriptFile.name + '" from disk';
+            } else {
+                btn.style.display = 'none';
             }
         }
 

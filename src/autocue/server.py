@@ -201,6 +201,10 @@ class WebServer:
         self.transcript_toggle_requested: bool | None = None
         # Start transcript when script loads
         self.start_transcript_on_script: bool = False
+        # Currently loaded script file (for reload from disk)
+        self.loaded_script_filename: str | None = None
+        self.loaded_script_source: str | None = None
+
         # Prompting state control
         self.start_prompting_requested: bool = False
         self.stop_prompting_requested: bool = False
@@ -342,6 +346,7 @@ class WebServer:
             "frontend_highlight": self._on_frontend_highlight_message,
             "load_sample": self._on_load_sample_message,
             "refresh_scripts": self._on_refresh_scripts_message,
+            "reload_script": self._on_reload_script_message,
             "toggle_transcript": self._on_toggle_transcript_message,
             "set_audio_device": self._on_set_audio_device_message,
             "get_transcription_models": self._on_get_transcription_models,
@@ -365,6 +370,9 @@ class WebServer:
         self.script_text = str(data.get("text", ""))
         self.start_transcript_on_script = bool(
             data.get("saveTranscript", False))
+        # Clear loaded file tracking since the user manually edited the script
+        self.loaded_script_filename = None
+        self.loaded_script_source = None
         await self._render_and_broadcast_script()
 
     async def _on_settings_message(
@@ -450,6 +458,23 @@ class WebServer:
         filename: str = str(data.get("filename", ""))
         source: str = str(data.get("source", "samples"))
         content: str | None = self._load_sample_script(filename, source)
+        if content is not None:
+            self.script_text = content
+            self.loaded_script_filename = filename
+            self.loaded_script_source = source
+            await self._render_and_broadcast_script()
+
+    async def _on_reload_script_message(
+        self,
+        _ws: web.WebSocketResponse,
+        _data: dict[str, object]
+    ) -> None:
+        """Handle reload script from disk message."""
+        if not self.loaded_script_filename or not self.loaded_script_source:
+            return
+        content: str | None = self._load_sample_script(
+            self.loaded_script_filename, self.loaded_script_source
+        )
         if content is not None:
             self.script_text = content
             await self._render_and_broadcast_script()
