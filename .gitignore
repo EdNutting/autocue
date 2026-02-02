@@ -8,3 +8,4 @@ transcripts/
 scripts/
 profiling_results
 build
+*.coverage

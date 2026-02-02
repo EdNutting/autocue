@@ -9,10 +9,16 @@ These tests measure real-world performance of the tracking algorithm
 to identify bottlenecks and ensure acceptable latency.
 """
 
+import sys
 import time
 from pathlib import Path
 
 import pytest
+
+# Coverage instrumentation adds significant overhead to tight loops.
+# Apply a multiplier to timing thresholds when coverage is active.
+_COVERAGE_ACTIVE = "coverage" in sys.modules
+_PERF_MULTIPLIER = 2.0 if _COVERAGE_ACTIVE else 1.0
 
 from autocue.profiling import (
     enable_profiling,
@@ -314,8 +320,8 @@ the window-based matching and jump detection algorithms.
         avg_partial = sum(session_times['partial'])/len(session_times['partial'])
         avg_final = sum(session_times['final'])/len(session_times['final'])
 
-        assert avg_partial < 0.005, f"Partial updates too slow in session: {avg_partial*1000:.3f}ms"
-        assert avg_final < 0.015, f"Final updates too slow in session: {avg_final*1000:.3f}ms"
+        assert avg_partial < 0.005 * _PERF_MULTIPLIER, f"Partial updates too slow in session: {avg_partial*1000:.3f}ms"
+        assert avg_final < 0.015 * _PERF_MULTIPLIER, f"Final updates too slow in session: {avg_final*1000:.3f}ms"
 
     @pytest.mark.slow
     def test_comprehensive_cprofile(self, sample_script: str):
