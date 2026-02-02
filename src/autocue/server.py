@@ -26,7 +26,7 @@ from . import debug_log
 from .audio import _get_default_hostapi_index
 from .config import DEFAULT_CONFIG, DisplaySettings, load_config, save_config, update_config_display
 from .providers import download_model_with_progress, get_all_available_models, is_model_downloaded
-from .script_parser import ParsedScript, RawToken, parse_script
+from .script_parser import ParsedScript, RawToken, parse_script, strip_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +143,9 @@ def render_script_with_word_indices(script_text: str) -> tuple[str, int, ParsedS
     Returns:
         Tuple of (html_with_word_spans, total_raw_tokens, parsed_script)
     """
+    # Step 0: Strip YAML frontmatter before processing
+    script_text = strip_frontmatter(script_text)
+
     # Step 1: Render markdown to HTML
     raw_html = markdown.markdown(
         script_text,

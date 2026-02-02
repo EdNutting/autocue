@@ -19,6 +19,20 @@ from html.parser import HTMLParser
 
 from .number_expander import get_number_expansions, is_number_token
 
+# Regex to match YAML frontmatter: starts at beginning of string with ---,
+# followed by any content, closed by --- on its own line.
+_FRONTMATTER_RE = re.compile(r'\A---[ \t]*\r?\n(.*?\r?\n)?---[ \t]*\r?\n', re.DOTALL)
+
+
+def strip_frontmatter(text: str) -> str:
+    """Remove YAML frontmatter from the beginning of a Markdown document.
+
+    Frontmatter is delimited by ``---`` on the first line and a closing
+    ``---`` on its own line.  Everything between (and including) these
+    delimiters is stripped so that it is not rendered or spoken.
+    """
+    return _FRONTMATTER_RE.sub('', text)
+
 # Punctuation that gets spoken as words
 # Maps punctuation strings to a list of possible spoken forms
 # Each form is itself a list of words (to handle multi-word expansions)

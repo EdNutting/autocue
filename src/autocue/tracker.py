@@ -23,6 +23,7 @@ from .script_parser import (
     normalize_word,
     parse_script,
     speakable_to_raw_index,
+    strip_frontmatter,
 )
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,9 @@ class ScriptTracker:
         self.max_jump_distance = max_jump_distance
         self.max_skip_distance = max_skip_distance
         self.skip_headers = skip_headers
+
+        # Strip YAML frontmatter before processing
+        script_text = strip_frontmatter(script_text)
 
         # Render markdown to HTML first
         rendered_html: str = markdown.markdown(

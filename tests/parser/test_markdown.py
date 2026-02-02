@@ -8,7 +8,12 @@ Tests for Markdown handling in script parsing.
 
 import markdown
 
-from src.autocue.script_parser import ParsedScript, SpeakableWord, parse_script
+from src.autocue.script_parser import (
+    ParsedScript,
+    SpeakableWord,
+    parse_script,
+    strip_frontmatter,
+)
 
 
 class TestMarkdownHandling:
@@ -101,3 +106,65 @@ More content."""
         for word in words:
             assert "**" not in word
             assert word != "*"
+
+
+class TestFrontmatterStripping:
+    """Tests for YAML frontmatter stripping from Markdown scripts."""
+
+    def test_strip_basic_frontmatter(self) -> None:
+        """Basic YAML frontmatter should be removed."""
+        script: str = "---\ntitle: My Script\nauthor: Someone\n---\nHello world."
+        result: str = strip_frontmatter(script)
+        assert result == "Hello world."
+
+    def test_strip_frontmatter_preserves_body(self) -> None:
+        """Content after frontmatter should be fully preserved."""
+        script: str = "---\nkey: value\n---\nFirst line.\n\nSecond line."
+        result: str = strip_frontmatter(script)
+        assert result == "First line.\n\nSecond line."
+
+    def test_no_frontmatter_unchanged(self) -> None:
+        """Text without frontmatter should be returned unchanged."""
+        script: str = "Hello world.\n\nThis is a script."
+        result: str = strip_frontmatter(script)
+        assert result == script
+
+    def test_frontmatter_must_start_at_beginning(self) -> None:
+        """Frontmatter delimiters not at the start should be left alone."""
+        script: str = "Some text\n---\ntitle: Not frontmatter\n---\nMore text."
+        result: str = strip_frontmatter(script)
+        assert result == script
+
+    def test_triple_dash_in_body_not_stripped(self) -> None:
+        """A --- divider in the body (after frontmatter) should not be stripped."""
+        script: str = "---\ntitle: Test\n---\nContent here.\n\n---\n\nMore content."
+        result: str = strip_frontmatter(script)
+        assert result == "Content here.\n\n---\n\nMore content."
+
+    def test_empty_frontmatter(self) -> None:
+        """Frontmatter with no fields should still be stripped."""
+        script: str = "---\n---\nBody text."
+        result: str = strip_frontmatter(script)
+        assert result == "Body text."
+
+    def test_frontmatter_with_windows_line_endings(self) -> None:
+        """Frontmatter with CRLF line endings should be stripped."""
+        script: str = "---\r\ntitle: Test\r\n---\r\nBody text."
+        result: str = strip_frontmatter(script)
+        assert result == "Body text."
+
+    def test_frontmatter_not_rendered_as_words(self) -> None:
+        """Frontmatter fields should not appear as speakable words."""
+        script: str = "---\ntitle: My Script\nauthor: Someone\n---\nHello world."
+        cleaned: str = strip_frontmatter(script)
+        html: str = markdown.markdown(
+            cleaned, extensions=['nl2br', 'sane_lists'])
+        parsed: ParsedScript = parse_script(cleaned, html)
+        words: list[str] = [sw.text for sw in parsed.speakable_words]
+
+        assert "hello" in words
+        assert "world" in words
+        # Frontmatter content should not be present
+        assert "title" not in words
+        assert "author" not in words
+        assert "someone" not in words
